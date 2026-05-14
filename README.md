@@ -94,6 +94,8 @@ sudo journalctl -u purin-dashboard -f
 **Hang with no `EPD … returned OK`:** if the last line is **`EPD: calling driver init()`** or **`EPD clear: calling init()`** and nothing after, the stock driver is blocked in **`ReadBusy()`** (BUSY pin / GPIO / SPI — not Flask). Confirm with Waveshare’s own script:  
 `python3 ~/e-Paper/RaspberryPi_JetsonNano/python/examples/epd_2in13_V4_test.py`.
 
+If the last line is **`EPD clear: mutex acquired`** and nothing after (older builds), that was a **`threading.Lock` re-entrancy bug** in **`clear()`** (now fixed with **`RLock`**).
+
 ### Match a legacy app or save power between frames
 
 By default we **avoid `epd.sleep()` after each draw**, matching **`epd_2in13_V4_test.py`** (sleep ends with **`module_exit()`**, which makes the controller look “asleep until the second refresh” on some setups).

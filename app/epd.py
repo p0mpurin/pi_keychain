@@ -97,7 +97,8 @@ class Display:
 
     def __init__(self, rotate: int = 0) -> None:
         self._rotate = rotate % 360
-        self._lock = threading.Lock()
+        # RLock: clear() and other paths may call _ensure_hardware() while already holding the HW lock.
+        self._lock = threading.RLock()
         self._epd: Any | None = None
         self._partial_count = 0
         self._epd_cls: Callable[[], Any] | None = None
