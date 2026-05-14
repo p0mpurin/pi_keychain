@@ -3,12 +3,14 @@
 {% block content %}
 <section class="card">
   <h2>Sketch pad</h2>
-  <p class="muted">Panel target: {{ panel_w }}×{{ panel_h }} px. Strokes scale to fit.</p>
+  <p class="muted">
+    Sketch resolution {{ canvas_w }}×{{ canvas_h }} (same aspect as logical panel {{ panel_w }}×{{ panel_h }}). Top of the pad maps to smaller Y → top of ink if orientation / coordinate-twist settings match your mount.
+  </p>
   <div class="canvas-wrap">
     <canvas
       id="sketch"
-      width="600"
-      height="300"
+      width="{{ canvas_w }}"
+      height="{{ canvas_h }}"
       data-panel-w="{{ panel_w }}"
       data-panel-h="{{ panel_h }}"
       aria-label="Drawing area"

@@ -11,8 +11,7 @@ Official reference for **`waveshare_epd.epd2in13_V4`** (class **`EPD`**) —
 
 Tune with env **`PURIN_EPD_SLEEP_AFTER_DRAW`** (**off by default**, matching the stock demo).
 **Landscape / polarity:** saved in **`data/display_settings.json`** when you use the dashboard (overrides env on restart). Env fallbacks:
-**`PURIN_EPD_ROTATE`** (**`0`** / **`90`** / **`180`** / **`270`**) — **`90`** makes the 2.13-inch V4 panel wide; **`270`** if upside‑down.
-**`PURIN_EPD_INVERT=1`** flips black/white.
+**`PURIN_EPD_ROTATE`**, **`PURIN_EPD_INVERT`**, **`PURIN_COORDINATE_TWIST_DEG`** (0/90/180/270; extra raster rotation before panel rotation).
 
 See: https://github.com/waveshareteam/e-Paper/blob/master/RaspberryPi_JetsonNano/python/examples/epd_2in13_V4_test.py
 
@@ -29,9 +28,15 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageOps
 
-from app.display_settings import effective_invert, effective_rotate
+from app.display_settings import (
+    effective_coordinate_twist_deg,
+    effective_invert,
+    effective_rotate,
+    effective_text_layout_dict,
+)
+from app.text_layout import TextLayoutProfile, render_plaintext
 
 logger = logging.getLogger(__name__)
 
@@ -100,9 +105,11 @@ class Display:
     width: int
     height: int
 
-    def __init__(self, rotate: int = 0, invert: bool = False) -> None:
+    def __init__(self, rotate: int = 0, invert: bool = False, coordinate_twist_deg: int = 0) -> None:
         self._rotate = rotate % 360
         self._invert = bool(invert)
+        t = int(coordinate_twist_deg) % 360
+        self._twist_deg = t if t in (0, 90, 180, 270) else 0
         self._base_w: int | None = None
         self._base_h: int | None = None
         self.width = 0
@@ -126,6 +133,17 @@ class Display:
     @property
     def invert_bits(self) -> bool:
         return self._invert
+
+    @property
+    def coordinate_twist_degrees(self) -> int:
+        return self._twist_deg % 360
+
+    def set_coordinate_twist_degrees(self, degrees: int) -> None:
+        v = int(degrees) % 360
+        if v not in (0, 90, 180, 270):
+            v = 0
+        with self._lock:
+            self._twist_deg = v
 
     def _recompute_logical_size(self) -> None:
         if self._base_w is None or self._base_h is None:
@@ -345,28 +363,16 @@ class Display:
             self._last_update_epoch = time.time()
 
     def show_image(self, img: Image.Image) -> None:
+        if self._twist_deg:
+            img = img.rotate(-self._twist_deg, expand=True, fillcolor=255)
         if self._rotate:
             img = img.rotate(-self._rotate, expand=True, fillcolor=255)
         self._draw_to_panel(img)
 
-    def show_text(self, text: str, font_size: int = 18) -> None:
+    def show_text(self, text: str, font_size: int | None = None) -> None:
         self._ensure_hardware()
-        img = Image.new("1", (self.width, self.height), 255)
-        draw = ImageDraw.Draw(img)
-        try:
-            font = ImageFont.truetype(
-                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", font_size
-            )
-        except OSError:
-            font = ImageFont.load_default()
-        margin = 4
-        draw.multiline_text(
-            (margin, margin),
-            text,
-            fill=0,
-            font=font,
-            spacing=4,
-        )
+        profile = TextLayoutProfile.from_dict(effective_text_layout_dict())
+        img = render_plaintext(text, self.width, self.height, profile, font_size=font_size)
         self.show_image(img)
 
     def shutdown(self) -> None:
@@ -390,10 +396,12 @@ def get_display() -> Display:
         if _singleton is None:
             rot = effective_rotate()
             inv = effective_invert()
-            _singleton = Display(rotate=rot, invert=inv)
+            twist = effective_coordinate_twist_deg()
+            _singleton = Display(rotate=rot, invert=inv, coordinate_twist_deg=twist)
             logger.info(
-                "EPD singleton: rotate=%s invert=%s (see data/display_settings.json > env fallback)",
+                "EPD singleton: rotate=%s twist=%s invert=%s (data/display_settings.json)",
                 rot,
+                twist,
                 inv,
             )
         return _singleton

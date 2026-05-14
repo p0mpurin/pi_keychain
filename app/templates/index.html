@@ -3,19 +3,86 @@
 {% block content %}
 <section class="card">
   <h2>Display orientation</h2>
-  <p class="muted">Landscape (wide text) uses 90° or 270°. Saved to <code>data/display_settings.json</code>; overrides systemd env on reboot.</p>
+  <p class="muted">
+    Stored in <code>data/display_settings.json</code>. <strong>Panel rotation</strong> matches the ribbon cable / how you carry the badge.
+    <strong>Axes fix</strong> rotates every raster (sketches, QR, text, clock) <em>before</em> panel rotation — use if strokes along one edge appear on another (e.g. top of sketch lands on ink’s left edge).
+  </p>
   <form method="post" action="{{ url_for('dashboard.api_display_settings') }}" class="stack">
-    <label for="rotate">Rotation (clockwise from default)</label>
+    <label for="rotate">Panel rotation</label>
     <select id="rotate" name="rotate">
       {% for deg in [0, 90, 180, 270] %}
-        <option value="{{ deg }}" {% if epd_rotate == deg %}selected{% endif %}>{{ deg }}° — {% if deg == 0 %}portrait (tall){% elif deg == 90 %}landscape A{% elif deg == 180 %}portrait upside-down{% else %}landscape B{% endif %}</option>
+        <option value="{{ deg }}" {% if epd_rotate == deg %}selected{% endif %}>{{ deg }}° — {% if deg == 0 %}portrait (tall){% elif deg == 90 %}landscape A{% elif deg == 180 %}portrait flipped{% else %}landscape B{% endif %}</option>
+      {% endfor %}
+    </select>
+    <label for="coordinate_twist_deg">Coordinate twist (fixes X/Y mismatch)</label>
+    <select id="coordinate_twist_deg" name="coordinate_twist_deg">
+      {% for deg in [0, 90, 180, 270] %}
+        <option value="{{ deg }}" {% if coordinate_twist == deg %}selected{% endif %}>
+          {{ deg }}° {% if deg == 0 %}— no twist{% endif %}
+        </option>
       {% endfor %}
     </select>
     <label class="row tight">
       <input type="checkbox" name="invert" value="on" {% if epd_invert %}checked{% endif %} />
-      <span>Invert black & white</span>
+      <span>Invert black & white (panel polarity)</span>
     </label>
     <button type="submit" class="btn primary">Save orientation</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Text on e-ink</h2>
+  <p class="muted">Controls “Send text”, notes pushed to screen, and shutdown banner. Saves under <code>text</code> in the same JSON file.</p>
+  <form method="post" action="{{ url_for('dashboard.api_text_layout') }}" class="stack">
+    <div class="field-grid">
+      <div class="field-min">
+        <label for="align_h">Align ↔</label>
+        <select id="align_h" name="align_h">
+          {% for opt in ["left", "center", "right"] %}
+          <option value="{{ opt }}" {% if text_layout.align_h == opt %}selected{% endif %}>{{ opt }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field-min">
+        <label for="align_v">Align ↕</label>
+        <select id="align_v" name="align_v">
+          {% for opt in ["top", "middle", "bottom"] %}
+          <option value="{{ opt }}" {% if text_layout.align_v == opt %}selected{% endif %}>{{ opt }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="field-grid">
+      <div class="field-min">
+        <label for="margin_x">Margin X (px)</label>
+        <input id="margin_x" name="margin_x" type="number" min="0" max="160" value="{{ text_layout.margin_x }}" />
+      </div>
+      <div class="field-min">
+        <label for="margin_y">Margin Y (px)</label>
+        <input id="margin_y" name="margin_y" type="number" min="0" max="160" value="{{ text_layout.margin_y }}" />
+      </div>
+      <div class="field-min">
+        <label for="font_size">Font size</label>
+        <input id="font_size" name="font_size" type="number" min="8" max="72" value="{{ text_layout.font_size }}" />
+      </div>
+      <div class="field-min">
+        <label for="line_spacing">Line gap</label>
+        <input id="line_spacing" name="line_spacing" type="number" min="0" max="32" value="{{ text_layout.line_spacing }}" />
+      </div>
+    </div>
+    <label class="row tight">
+      <input type="checkbox" name="flip_horizontal" value="on" {% if text_layout.flip_horizontal %}checked{% endif %} />
+      <span>Flip text horizontally</span>
+    </label>
+    <label class="row tight">
+      <input type="checkbox" name="flip_vertical" value="on" {% if text_layout.flip_vertical %}checked{% endif %} />
+      <span>Flip text vertically</span>
+    </label>
+    <label class="row tight">
+      <input type="checkbox" name="reverse_chars" value="on" {% if text_layout.reverse_chars %}checked{% endif %} />
+      <span>Reverse characters on each line (Latin workaround — not full RTL shaping)</span>
+    </label>
+    <button type="submit" class="btn primary">Save text layout</button>
   </form>
 </section>
 

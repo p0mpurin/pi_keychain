@@ -10,7 +10,11 @@ from pathlib import Path
 
 from flask import Blueprint, flash, redirect, render_template, request, url_for
 
-from app.display_settings import save_settings
+from app.display_settings import (
+    effective_text_layout_dict,
+    save_settings,
+    save_text_layout,
+)
 from app.epd import PANEL_MODULE, get_display
 from app.features import clock as clock_feature
 from app.features import draw as draw_feature
@@ -66,6 +70,13 @@ def _parse_invert(raw: object | None, *, form_checkbox: bool) -> bool:
     return False
 
 
+def _intrinsic_canvas_size(panel_w: int, panel_h: int, *, target_max_edge: int = 720) -> tuple[int, int]:
+    """Interior canvas pixels with same aspect as logical panel (avoids distorted X/Y in draw export)."""
+    pw, ph = max(16, int(panel_w)), max(16, int(panel_h))
+    scale = target_max_edge / max(pw, ph)
+    return max(48, round(pw * scale)), max(48, round(ph * scale))
+
+
 def _schedule_display(work, *, synchronous: bool = False) -> None:
     """Run display IO off the Flask request thread unless synchronous (signals)."""
 
@@ -101,7 +112,84 @@ def index():
         "index.html",
         epd_rotate=disp.rotation_degrees,
         epd_invert=disp.invert_bits,
+        coordinate_twist=disp.coordinate_twist_degrees,
+        text_layout=effective_text_layout_dict(),
     )
+
+
+def _coerce_text_layout_payload(src: dict) -> dict:
+    def g_int(key: str, lo: int, hi: int, default: int) -> int:
+        try:
+            v = int(src.get(key, default))
+        except (TypeError, ValueError):
+            return default
+        return max(lo, min(hi, v))
+
+    ah = str(src.get("align_h", "left")).lower()
+    if ah not in ("left", "center", "right"):
+        ah = "left"
+    av = str(src.get("align_v", "top")).lower()
+    if av not in ("top", "middle", "bottom"):
+        av = "top"
+    def as_bool(key: str) -> bool:
+        raw = src.get(key)
+        if isinstance(raw, bool):
+            return raw
+        if isinstance(raw, (int, float)):
+            return raw != 0
+        if isinstance(raw, str):
+            return raw.strip().lower() in ("1", "true", "yes", "on")
+        return False
+
+    return {
+        "align_h": ah,
+        "align_v": av,
+        "margin_x": g_int("margin_x", 0, 160, 4),
+        "margin_y": g_int("margin_y", 0, 160, 4),
+        "font_size": g_int("font_size", 8, 72, 18),
+        "line_spacing": g_int("line_spacing", 0, 32, 4),
+        "flip_horizontal": as_bool("flip_horizontal"),
+        "flip_vertical": as_bool("flip_vertical"),
+        "reverse_chars": as_bool("reverse_chars"),
+    }
+
+
+def _text_layout_from_form() -> dict:
+    return _coerce_text_layout_payload(
+        {
+            "align_h": request.form.get("align_h"),
+            "align_v": request.form.get("align_v"),
+            "margin_x": request.form.get("margin_x"),
+            "margin_y": request.form.get("margin_y"),
+            "font_size": request.form.get("font_size"),
+            "line_spacing": request.form.get("line_spacing"),
+            "flip_horizontal": request.form.get("flip_horizontal") == "on",
+            "flip_vertical": request.form.get("flip_vertical") == "on",
+            "reverse_chars": request.form.get("reverse_chars") == "on",
+        }
+    )
+
+
+@bp.route("/api/text_layout", methods=["GET", "POST"])
+def api_text_layout():
+    if request.method == "GET":
+        return {"ok": True, "text": effective_text_layout_dict()}
+
+    ct = (request.content_type or "").split(";")[0].strip().lower()
+    payload = request.get_json(silent=True)
+
+    if ct == "application/json" and isinstance(payload, dict):
+        layout = _coerce_text_layout_payload(payload)
+    else:
+        layout = _text_layout_from_form()
+
+    save_text_layout(layout)
+
+    if ct == "application/json" and isinstance(payload, dict):
+        return {"ok": True, "text": effective_text_layout_dict()}
+
+    flash("Saved text layout.", "info")
+    return redirect(url_for("dashboard.index"))
 
 
 @bp.route("/api/display_settings", methods=["GET", "POST"])
@@ -112,6 +200,8 @@ def api_display_settings():
             "ok": True,
             "rotate": disp.rotation_degrees,
             "invert": disp.invert_bits,
+            "coordinate_twist_deg": disp.coordinate_twist_degrees,
+            "text": effective_text_layout_dict(),
         }
 
     ct = (request.content_type or "").split(";")[0].strip().lower()
@@ -126,19 +216,35 @@ def api_display_settings():
         inv = disp.invert_bits
         if "invert" in payload:
             inv = bool(payload["invert"])
+        if "coordinate_twist_deg" in payload:
+            twist = _parse_rotate_env_val(payload.get("coordinate_twist_deg"))
+            if twist is None:
+                return _json_err("coordinate_twist_deg must be 0, 90, 180, or 270")
+        else:
+            twist = disp.coordinate_twist_degrees
     else:
         rot = _parse_rotate_env_val(request.form.get("rotate"))
         if rot is None:
             flash("Choose a valid rotation.", "error")
             return redirect(url_for("dashboard.index"))
         inv = request.form.get("invert") == "on"
+        twist = _parse_rotate_env_val(request.form.get("coordinate_twist_deg"))
+        if twist is None:
+            twist = 0
 
-    save_settings(rot, inv)
+    save_settings(rot, inv, coordinate_twist_deg=twist)
     disp.set_rotation(rot)
     disp.set_invert(inv)
+    disp.set_coordinate_twist_degrees(twist)
 
     if ct == "application/json" and isinstance(payload, dict):
-        return {"ok": True, "rotate": rot, "invert": inv}
+        return {
+            "ok": True,
+            "rotate": rot,
+            "invert": inv,
+            "coordinate_twist_deg": twist,
+            "text": effective_text_layout_dict(),
+        }
 
     flash("Saved display orientation.", "info")
     return redirect(url_for("dashboard.index"))
@@ -151,7 +257,8 @@ def draw_page():
         w, h = disp.probe_size()
     except Exception:
         w, h = 250, 122
-    return render_template("draw.html", panel_w=w, panel_h=h)
+    cw, ch = _intrinsic_canvas_size(w, h)
+    return render_template("draw.html", panel_w=w, panel_h=h, canvas_w=cw, canvas_h=ch)
 
 
 @bp.route("/qr")
@@ -252,7 +359,12 @@ def api_status():
         "uptime": uptime_s,
         "last_update": last,
         "panel": PANEL_MODULE,
-        "display": {"rotate": disp.rotation_degrees, "invert": disp.invert_bits},
+        "display": {
+            "rotate": disp.rotation_degrees,
+            "invert": disp.invert_bits,
+            "coordinate_twist_deg": disp.coordinate_twist_degrees,
+            "text": effective_text_layout_dict(),
+        },
     }
 
 
