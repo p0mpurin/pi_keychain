@@ -1,4 +1,19 @@
-"""Thread-safe e-ink display wrapper (Waveshare via ~/e-Paper)."""
+"""Thread-safe e-ink display wrapper (Waveshare via ~/e-Paper).
+
+Official reference for **`waveshare_epd.epd2in13_V4`** (class **`EPD`**) —
+`RaspberryPi_JetsonNano/python/examples/epd_2in13_V4_test.py` in waveshareteam/e-Paper:
+
+- **`epd.init()`** then **`epd.Clear(0xFF)`**, then **`epd.init()`** again immediately before **`epd.display(epd.getbuffer(image))`**.
+- While cycling images the demo uses **`time.sleep()`** on the Pi only — **`epd.sleep()`** is for **power‑off / deep sleep**.
+- **`epd.sleep()`** sends deep‑sleep commands and **`epdconfig.module_exit()`** (releases SPI/GPIO); calling it after **every**
+  frame often matches “nothing until I pushed twice” / flaky first updates.
+- PIL frames in Waveshare’s demo use **`Image.new('1', (epd.height, epd.width), 255)`** (250×122); **`getbuffer()`** also accepts **`(122, 250)`** and handles rotation internally.
+
+Tune with env **`PURIN_EPD_SLEEP_AFTER_DRAW`** (**off by default**, matching the stock demo).
+
+See: https://github.com/waveshareteam/e-Paper/blob/master/RaspberryPi_JetsonNano/python/examples/epd_2in13_V4_test.py
+
+"""
 
 from __future__ import annotations
 
@@ -59,6 +74,21 @@ def _install_epaper_path() -> Path | None:
 _EPAPER_LIB: Path | None = _install_epaper_path()
 
 
+def _truthy_env(name: str, default: str = "1") -> bool:
+    v = os.environ.get(name, default).strip().lower()
+    return v not in ("0", "false", "no", "off", "")
+
+
+def _float_env(name: str, default: float) -> float:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
 class Display:
     """Lazy-init panel driver with locking, ghosting mitigation, and safe SPI handling."""
 
@@ -72,6 +102,7 @@ class Display:
         self._partial_count = 0
         self._epd_cls: Callable[[], Any] | None = None
         self._last_update_epoch: float | None = None
+        self._warm_boot_done = False
 
     @property
     def last_update_epoch(self) -> float | None:
@@ -124,35 +155,88 @@ class Display:
         finally:
             self._partial_count = 0
 
+    def _warm_boot_if_needed(self, epd: Any) -> None:
+        """Matches common Waveshare bring-up: init → pause → full white → pause (legacy app style)."""
+        if self._warm_boot_done:
+            return
+        delay = _float_env("PURIN_EPD_INIT_SLEEP_SEC", 0.0)
+        try:
+            epd.init()
+            if delay > 0:
+                time.sleep(delay)
+            epd.Clear(0xFF)
+            if delay > 0:
+                time.sleep(delay)
+        except (IOError, OSError) as e:
+            logger.warning("EPD warm boot failed: %s", e)
+        self._warm_boot_done = True
+
+    @staticmethod
+    def _panel_variants(base: Image.Image, target_w: int, target_h: int) -> list[Image.Image]:
+        """When the frame is not already panel-sized, try 0°/90°/270° like the working ink stack."""
+        im = base.convert("1")
+        if im.size == (target_w, target_h):
+            return [im]
+        return [
+            im,
+            im.rotate(90, expand=True, fillcolor=255),
+            im.rotate(270, expand=True, fillcolor=255),
+        ]
+
+    def _push_frame(self, epd: Any, image: Image.Image) -> bool:
+        """Send a 1-bit frame; return True if display() succeeded."""
+        buf_fn = getattr(epd, "getbuffer", None)
+        tw, th = self.width, self.height
+        variants = self._panel_variants(image, tw, th)
+        last_err: OSError | IOError | None = None
+        for cand in variants:
+            try:
+                frame = cand.convert("1")
+                if frame.size != (tw, th):
+                    frame = frame.resize((tw, th), Image.Resampling.LANCZOS).convert("1")
+                if not callable(buf_fn):
+                    logger.error("EPD driver has no getbuffer(); cannot push frame")
+                    return False
+                epd.display(buf_fn(frame))
+                return True
+            except (IOError, OSError) as e:
+                last_err = e
+                logger.debug("EPD variant push failed (%sx%s→%sx%s): %s", cand.size[0], cand.size[1], tw, th, e)
+        if last_err is not None:
+            logger.warning("EPD refresh failed (exhausted rotations): %s", last_err)
+        return False
+
+    def _sleep_panel(self, epd: Any) -> None:
+        # Waveshare's stock demo does NOT call epd.sleep() between frames; sleep() runs module_exit().
+        if not _truthy_env("PURIN_EPD_SLEEP_AFTER_DRAW", "0"):
+            return
+        try:
+            epd.sleep()
+        except (IOError, OSError) as e:
+            logger.warning("EPD sleep failed: %s", e)
+
     def _draw_to_panel(self, image: Image.Image) -> None:
         epd = self._ensure_hardware()
         if image.mode != "1":
             image = image.convert("1")
-        if image.size != (self.width, self.height):
-            image = image.resize((self.width, self.height), Image.Resampling.LANCZOS).convert(
-                "1"
-            )
 
         def run() -> None:
+            ok = False
             with self._lock:
                 try:
                     self._maybe_full_clean(epd)
+                    self._warm_boot_if_needed(epd)
                     epd.init()
-                    buf_fn = getattr(epd, "getbuffer", None)
-                    if callable(buf_fn):
-                        epd.display(buf_fn(image))
-                    else:
-                        epd.display(image)
+                    ok = self._push_frame(epd, image)
                 except (IOError, OSError) as e:
                     logger.warning("EPD refresh failed: %s", e)
-                    return
+                    ok = False
                 finally:
-                    try:
-                        epd.sleep()
-                    except (IOError, OSError) as e:
-                        logger.warning("EPD sleep failed: %s", e)
-                self._partial_count += 1
-                self._last_update_epoch = time.time()
+                    if ok:
+                        self._sleep_panel(epd)
+                if ok:
+                    self._partial_count += 1
+                    self._last_update_epoch = time.time()
 
         run()
 
@@ -160,17 +244,12 @@ class Display:
         with self._lock:
             try:
                 epd = self._ensure_hardware()
+                self._warm_boot_if_needed(epd)
                 epd.init()
                 epd.Clear(0xFF)
             except (IOError, OSError) as e:
                 logger.warning("EPD clear failed: %s", e)
                 return
-            finally:
-                try:
-                    if self._epd is not None:
-                        self._epd.sleep()
-                except (IOError, OSError) as e:
-                    logger.warning("EPD sleep after clear failed: %s", e)
             self._partial_count = 0
             self._last_update_epoch = time.time()
 

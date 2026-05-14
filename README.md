@@ -76,6 +76,22 @@ journalctl -u purin-dashboard -n 30 --no-pager
 
 You should see a line like **`waveshare_epd: added to sys.path -> …`**. If you see **`no library directory found`**, fix the path. Wrong panel driver: change **`PANEL_MODULE`** in **`app/epd.py`** to match your HAT (see Waveshare examples under **`python/examples/`**).
 
+### Match a legacy app or save power between frames
+
+By default we **avoid `epd.sleep()` after each draw**, matching **`epd_2in13_V4_test.py`** (sleep ends with **`module_exit()`**, which makes the controller look “asleep until the second refresh” on some setups).
+
+Enable low-power teardown after **every successful draw** only if you need it:
+
+```bash
+Environment=PURIN_EPD_SLEEP_AFTER_DRAW=1
+```
+
+Optional Waveshare-style pauses after **`init` / `Clear`** on first use (seconds, **`0`** = off):
+
+```bash
+Environment=PURIN_EPD_INIT_SLEEP_SEC=1
+```
+
 ## Updating the app with overlayroot
 
 When overlay root is enabled:
