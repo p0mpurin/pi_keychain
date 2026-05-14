@@ -10,6 +10,9 @@ Official reference for **`waveshare_epd.epd2in13_V4`** (class **`EPD`**) —
 - PIL frames in Waveshare’s demo use **`Image.new('1', (epd.height, epd.width), 255)`** (250×122); **`getbuffer()`** also accepts **`(122, 250)`** and handles rotation internally.
 
 Tune with env **`PURIN_EPD_SLEEP_AFTER_DRAW`** (**off by default**, matching the stock demo).
+**Landscape / polarity:** saved in **`data/display_settings.json`** when you use the dashboard (overrides env on restart). Env fallbacks:
+**`PURIN_EPD_ROTATE`** (**`0`** / **`90`** / **`180`** / **`270`**) — **`90`** makes the 2.13-inch V4 panel wide; **`270`** if upside‑down.
+**`PURIN_EPD_INVERT=1`** flips black/white.
 
 See: https://github.com/waveshareteam/e-Paper/blob/master/RaspberryPi_JetsonNano/python/examples/epd_2in13_V4_test.py
 
@@ -26,7 +29,9 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps
+
+from app.display_settings import effective_invert, effective_rotate
 
 logger = logging.getLogger(__name__)
 
@@ -89,14 +94,18 @@ def _float_env(name: str, default: float) -> float:
         return default
 
 
-class Display:
     """Lazy-init panel driver with locking, ghosting mitigation, and safe SPI handling."""
 
     width: int
     height: int
 
-    def __init__(self, rotate: int = 0) -> None:
+    def __init__(self, rotate: int = 0, invert: bool = False) -> None:
         self._rotate = rotate % 360
+        self._invert = bool(invert)
+        self._base_w: int | None = None
+        self._base_h: int | None = None
+        self.width = 0
+        self.height = 0
         # RLock: clear() and other paths may call _ensure_hardware() while already holding the HW lock.
         self._lock = threading.RLock()
         self._epd: Any | None = None
@@ -108,6 +117,35 @@ class Display:
     @property
     def last_update_epoch(self) -> float | None:
         return self._last_update_epoch
+
+    @property
+    def rotation_degrees(self) -> int:
+        return self._rotate % 360
+
+    @property
+    def invert_bits(self) -> bool:
+        return self._invert
+
+    def _recompute_logical_size(self) -> None:
+        if self._base_w is None or self._base_h is None:
+            return
+        w, h = self._base_w, self._base_h
+        if self._rotate in (90, 270):
+            w, h = h, w
+        self.width, self.height = w, h
+
+    def set_rotation(self, degrees: int) -> None:
+        """Update rotation and logical width/height (thread-safe)."""
+        v = int(degrees) % 360
+        if v not in (0, 90, 180, 270):
+            v = 0
+        with self._lock:
+            self._rotate = v
+            self._recompute_logical_size()
+
+    def set_invert(self, invert: bool) -> None:
+        with self._lock:
+            self._invert = bool(invert)
 
     def _load_driver_class(self) -> Callable[[], Any]:
         if self._epd_cls is not None:
@@ -136,8 +174,11 @@ class Display:
                 return self._epd
             cls = self._load_driver_class()
             epd = cls()
-            w = int(getattr(epd, "width", getattr(epd, "WIDTH", 0)))
-            h = int(getattr(epd, "height", getattr(epd, "HEIGHT", 0)))
+            bw = int(getattr(epd, "width", getattr(epd, "WIDTH", 0)))
+            bh = int(getattr(epd, "height", getattr(epd, "HEIGHT", 0)))
+            self._base_w = bw
+            self._base_h = bh
+            w, h = bw, bh
             if self._rotate in (90, 270):
                 w, h = h, w
             self.width, self.height = w, h
@@ -244,8 +285,6 @@ class Display:
         )
         epd = self._ensure_hardware()
         logger.info("EPD: driver instance ready (module=%s)", PANEL_MODULE)
-        if image.mode != "1":
-            image = image.convert("1")
 
         def run() -> None:
             ok = False
@@ -254,6 +293,9 @@ class Display:
                 threading.current_thread().name,
             )
             with self._lock:
+                cur = image.convert("1")
+                if self._invert:
+                    cur = ImageOps.invert(cur)
                 logger.info("EPD: mutex acquired — refresh begins")
                 try:
                     logger.info("EPD: maybe_full_clean check (partial_count=%s)", self._partial_count)
@@ -266,7 +308,7 @@ class Display:
                     epd.init()
                     logger.info("EPD: init() returned OK")
                     logger.info("EPD: push_frame …")
-                    ok = self._push_frame(epd, image)
+                    ok = self._push_frame(epd, cur)
                 except (IOError, OSError) as e:
                     logger.warning("EPD refresh failed: %s", e)
                     ok = False
@@ -345,5 +387,12 @@ def get_display() -> Display:
     global _singleton
     with _singleton_lock:
         if _singleton is None:
-            _singleton = Display()
+            rot = effective_rotate()
+            inv = effective_invert()
+            _singleton = Display(rotate=rot, invert=inv)
+            logger.info(
+                "EPD singleton: rotate=%s invert=%s (see data/display_settings.json > env fallback)",
+                rot,
+                inv,
+            )
         return _singleton

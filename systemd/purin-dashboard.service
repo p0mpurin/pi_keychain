@@ -18,6 +18,9 @@ Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONPATH=/home/purin/pi_keychain
 # Waveshare lib is still added inside app/epd.py; this points root’s search at purin’s clone:
 Environment=PURIN_EPAPER_LIB=/home/purin/e-Paper/RaspberryPi_JetsonNano/python/lib
+# 2.13" V4: wide layout for text / QR (+ swap B/W if the panel looks inverted). Use 270 if upside down.
+Environment=PURIN_EPD_ROTATE=90
+Environment=PURIN_EPD_INVERT=1
 # Optional: PURIN_LOG_LEVEL=DEBUG , PURIN_LOG_HTTP=1
 #
 # ONLY if your on-disk epdconfig.py uses gpiozero AND you hit RPi edge-detect errors:

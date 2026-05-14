@@ -97,6 +97,15 @@ journalctl -u purin-dashboard -n 30 --no-pager
 
 You should see a line like **`waveshare_epd: added to sys.path → …`**. If you see **`no library directory found`**, fix the path. Wrong panel driver: change **`PANEL_MODULE`** in **`app/epd.py`** to match your HAT (see Waveshare examples under **`python/examples/`**).
 
+### E‑paper orientation / inverted black & white
+
+Adjust from the **dashboard** (Text page, first card): **rotation** and **invert**. That writes **`data/display_settings.json`**; on every start the app loads that file first and only falls back to **`PURIN_EPD_ROTATE`** / **`PURIN_EPD_INVERT`** in the unit if the file is absent or invalid.
+
+- **API:** **`GET /api/display_settings`**, **`POST /api/display_settings`** with JSON **`{"rotate": 90, "invert": true}`** (optional **`invert`** in JSON keeps current value if omitted).
+- Remove the JSON file to revert to env-only behaviour.
+- **Upside‑down landscape:** **`90` → `270`** in the form.
+- **`/api/status`** includes **`display.rotate`** and **`display.invert`**.
+
 ### Log noise: werkzeug vs e‑paper
 
 `/api/clear` and other routes show **`POST … werkzeug`** lines at **INFO**; that proves the browser talked to Flask, **not** that SPI ran. Startup also logs **`waveshare_epd: added …`**.

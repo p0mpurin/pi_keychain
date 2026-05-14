@@ -10,6 +10,7 @@ from pathlib import Path
 
 from flask import Blueprint, flash, redirect, render_template, request, url_for
 
+from app.display_settings import save_settings
 from app.epd import PANEL_MODULE, get_display
 from app.features import clock as clock_feature
 from app.features import draw as draw_feature
@@ -36,6 +37,33 @@ def _wifi_qr_payload() -> str:
     ssid = os.environ.get("PURIN_AP_SSID", "purin-pi")
     psk = os.environ.get("PURIN_PSK", "changeme-please")
     return f"WIFI:T:WPA;S:{ssid};P:{psk};;"
+
+
+def _parse_rotate_env_val(raw: object | None) -> int | None:
+    if raw is None:
+        return None
+    try:
+        v = int(raw) % 360
+    except (TypeError, ValueError):
+        return None
+    return v if v in {0, 90, 180, 270} else None
+
+
+def _parse_invert(raw: object | None, *, form_checkbox: bool) -> bool:
+    if raw is None:
+        return False
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, (int, float)):
+        return bool(raw)
+    s = str(raw).strip().lower()
+    if s in ("1", "true", "yes", "on"):
+        return True
+    if s in ("0", "false", "no", "off"):
+        return False
+    if form_checkbox:
+        return s == "on"
+    return False
 
 
 def _schedule_display(work, *, synchronous: bool = False) -> None:
@@ -68,7 +96,52 @@ def _json_err(message: str, status: int = 400) -> tuple[dict[str, object], int]:
 
 @bp.route("/")
 def index():
-    return render_template("index.html")
+    disp = get_display()
+    return render_template(
+        "index.html",
+        epd_rotate=disp.rotation_degrees,
+        epd_invert=disp.invert_bits,
+    )
+
+
+@bp.route("/api/display_settings", methods=["GET", "POST"])
+def api_display_settings():
+    disp = get_display()
+    if request.method == "GET":
+        return {
+            "ok": True,
+            "rotate": disp.rotation_degrees,
+            "invert": disp.invert_bits,
+        }
+
+    ct = (request.content_type or "").split(";")[0].strip().lower()
+    payload = request.get_json(silent=True)
+
+    if ct == "application/json" and isinstance(payload, dict):
+        if "rotate" not in payload:
+            return _json_err("rotate required")
+        rot = _parse_rotate_env_val(payload.get("rotate"))
+        if rot is None:
+            return _json_err("rotate must be 0, 90, 180, or 270")
+        inv = disp.invert_bits
+        if "invert" in payload:
+            inv = bool(payload["invert"])
+    else:
+        rot = _parse_rotate_env_val(request.form.get("rotate"))
+        if rot is None:
+            flash("Choose a valid rotation.", "error")
+            return redirect(url_for("dashboard.index"))
+        inv = request.form.get("invert") == "on"
+
+    save_settings(rot, inv)
+    disp.set_rotation(rot)
+    disp.set_invert(inv)
+
+    if ct == "application/json" and isinstance(payload, dict):
+        return {"ok": True, "rotate": rot, "invert": inv}
+
+    flash("Saved display orientation.", "info")
+    return redirect(url_for("dashboard.index"))
 
 
 @bp.route("/draw")
@@ -179,6 +252,7 @@ def api_status():
         "uptime": uptime_s,
         "last_update": last,
         "panel": PANEL_MODULE,
+        "display": {"rotate": disp.rotation_degrees, "invert": disp.invert_bits},
     }
 
 

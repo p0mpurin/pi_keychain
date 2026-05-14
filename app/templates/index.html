@@ -2,6 +2,24 @@
 {% block title %}Text · Purin Pi{% endblock %}
 {% block content %}
 <section class="card">
+  <h2>Display orientation</h2>
+  <p class="muted">Landscape (wide text) uses 90° or 270°. Saved to <code>data/display_settings.json</code>; overrides systemd env on reboot.</p>
+  <form method="post" action="{{ url_for('dashboard.api_display_settings') }}" class="stack">
+    <label for="rotate">Rotation (clockwise from default)</label>
+    <select id="rotate" name="rotate">
+      {% for deg in [0, 90, 180, 270] %}
+        <option value="{{ deg }}" {% if epd_rotate == deg %}selected{% endif %}>{{ deg }}° — {% if deg == 0 %}portrait (tall){% elif deg == 90 %}landscape A{% elif deg == 180 %}portrait upside-down{% else %}landscape B{% endif %}</option>
+      {% endfor %}
+    </select>
+    <label class="row tight">
+      <input type="checkbox" name="invert" value="on" {% if epd_invert %}checked{% endif %} />
+      <span>Invert black & white</span>
+    </label>
+    <button type="submit" class="btn primary">Save orientation</button>
+  </form>
+</section>
+
+<section class="card">
   <h2>Send text to e-ink</h2>
   <form method="post" action="{{ url_for('dashboard.api_text') }}" class="stack">
     <label for="msg">Message</label>
