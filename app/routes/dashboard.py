@@ -11,7 +11,10 @@ from pathlib import Path
 from flask import Blueprint, flash, redirect, render_template, request, url_for
 
 from app.display_settings import (
+    MODES,
+    effective_mode,
     effective_text_layout_dict,
+    save_mode,
     save_settings,
     save_text_layout,
 )
@@ -112,7 +115,7 @@ def index():
         "index.html",
         epd_rotate=disp.rotation_degrees,
         epd_invert=disp.invert_bits,
-        coordinate_twist=disp.coordinate_twist_degrees,
+        epd_mode=effective_mode(),
         text_layout=effective_text_layout_dict(),
     )
 
@@ -144,13 +147,12 @@ def _coerce_text_layout_payload(src: dict) -> dict:
     return {
         "align_h": ah,
         "align_v": av,
-        "margin_x": g_int("margin_x", 0, 160, 4),
-        "margin_y": g_int("margin_y", 0, 160, 4),
-        "font_size": g_int("font_size", 8, 72, 18),
-        "line_spacing": g_int("line_spacing", 0, 32, 4),
+        "margin_x": g_int("margin_x", 0, 120, 6),
+        "margin_y": g_int("margin_y", 0, 120, 6),
+        "font_size": g_int("font_size", 0, 72, 0),   # 0 = auto
+        "line_spacing": g_int("line_spacing", 0, 24, 3),
         "flip_horizontal": as_bool("flip_horizontal"),
         "flip_vertical": as_bool("flip_vertical"),
-        "reverse_chars": as_bool("reverse_chars"),
     }
 
 
@@ -165,7 +167,6 @@ def _text_layout_from_form() -> dict:
             "line_spacing": request.form.get("line_spacing"),
             "flip_horizontal": request.form.get("flip_horizontal") == "on",
             "flip_vertical": request.form.get("flip_vertical") == "on",
-            "reverse_chars": request.form.get("reverse_chars") == "on",
         }
     )
 
@@ -189,6 +190,42 @@ def api_text_layout():
         return {"ok": True, "text": effective_text_layout_dict()}
 
     flash("Saved text layout.", "info")
+    return redirect(url_for("dashboard.index"))
+
+
+@bp.post("/api/mode")
+def api_mode():
+    """Set horizontal/vertical mode + invert + font_size in one click."""
+    ct      = (request.content_type or "").split(";")[0].strip().lower()
+    payload = request.get_json(silent=True) if ct == "application/json" else None
+
+    if isinstance(payload, dict):
+        mode      = str(payload.get("mode", "horizontal")).lower()
+        inv       = bool(payload.get("invert", False))
+        font_size = int(payload.get("font_size", 0))
+    else:
+        mode      = str(request.form.get("mode", "horizontal")).lower()
+        inv       = request.form.get("invert") == "on"
+        try:
+            font_size = int(request.form.get("font_size", 0))
+        except (TypeError, ValueError):
+            font_size = 0
+
+    if mode not in MODES:
+        mode = "horizontal"
+
+    preset = MODES[mode]
+    save_mode(mode, inv, font_size=font_size)
+
+    disp = get_display()
+    disp.set_rotation(preset["rotate"])
+    disp.set_invert(inv)
+    disp.set_coordinate_twist_degrees(preset["coordinate_twist_deg"])
+
+    if isinstance(payload, dict):
+        return {"ok": True, "mode": mode, "rotate": preset["rotate"], "invert": inv}
+
+    flash(f"Mode set to {mode}.", "info")
     return redirect(url_for("dashboard.index"))
 
 

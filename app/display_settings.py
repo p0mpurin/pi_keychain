@@ -1,4 +1,4 @@
-"""Persisted e-paper orientation + optional text-layout block (`data/display_settings.json`)."""
+"""Persisted display settings — orientation mode, text layout, invert."""
 
 from __future__ import annotations
 
@@ -10,31 +10,48 @@ from typing import Any
 from app.text_layout import DEFAULT_TEXT_LAYOUT
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DATA_DIR = _PROJECT_ROOT / "data"
+DATA_DIR      = _PROJECT_ROOT / "data"
 SETTINGS_PATH = DATA_DIR / "display_settings.json"
 
 _VALID_ROT = frozenset((0, 90, 180, 270))
 
+# ── Mode presets (ports-on-top / upside-down mount) ───────────────────────────
+# The Waveshare 2.13" driver native: width=122 height=250 (portrait).
+# Holding with ports on top means the natural image is upside down.
+#   horizontal → rotate 270° → logical 250×122 wide, right-side-up
+#   vertical   → rotate 180° → logical 122×250 tall, right-side-up
 
-def _env_rotate() -> int:
-    raw = os.environ.get("PURIN_EPD_ROTATE", "").strip()
+MODES: dict[str, dict[str, int]] = {
+    "horizontal": {"rotate": 270, "coordinate_twist_deg": 0},
+    "vertical":   {"rotate": 180, "coordinate_twist_deg": 0},
+}
+
+DEFAULT_MODE = "horizontal"
+
+
+# ── low-level helpers ─────────────────────────────────────────────────────────
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name, "").strip()
     if not raw:
-        return 0
+        return default
     try:
         v = int(raw) % 360
     except ValueError:
-        return 0
-    return v if v in _VALID_ROT else 0
+        return default
+    return v if v in _VALID_ROT else default
 
 
-def _env_invert() -> bool:
-    v = os.environ.get("PURIN_EPD_INVERT", "0").strip().lower()
-    return v not in ("0", "false", "no", "off", "")
+def _env_bool(name: str, default: bool = False) -> bool:
+    v = os.environ.get(name, "").strip().lower()
+    if not v:
+        return default
+    return v not in ("0", "false", "no", "off")
 
 
 def read_settings_file() -> dict:
     try:
-        raw = SETTINGS_PATH.read_text(encoding="utf-8")
+        raw  = SETTINGS_PATH.read_text(encoding="utf-8")
         data = json.loads(raw)
         return data if isinstance(data, dict) else {}
     except FileNotFoundError:
@@ -50,6 +67,8 @@ def _atomic_write(data: dict[str, Any]) -> None:
     os.replace(tmp, SETTINGS_PATH)
 
 
+# ── effective values ──────────────────────────────────────────────────────────
+
 def effective_rotate() -> int:
     data = read_settings_file()
     r = data.get("rotate")
@@ -60,34 +79,17 @@ def effective_rotate() -> int:
                 return v
         except (TypeError, ValueError):
             pass
-    return _env_rotate()
+    return _env_int("PURIN_EPD_ROTATE", 270)   # default to horizontal
 
 
 def effective_invert() -> bool:
     data = read_settings_file()
     if "invert" in data:
         return bool(data["invert"])
-    return _env_invert()
-
-
-def effective_text_layout_dict() -> dict[str, Any]:
-    """Merged defaults + saved `text` object."""
-    return {**DEFAULT_TEXT_LAYOUT, **read_settings_file().get("text", {})}
-
-
-def _env_twist_deg() -> int:
-    raw = os.environ.get("PURIN_COORDINATE_TWIST_DEG", "").strip()
-    if not raw:
-        return 0
-    try:
-        v = int(raw) % 360
-    except ValueError:
-        return 0
-    return v if v in _VALID_ROT else 0
+    return _env_bool("PURIN_EPD_INVERT")
 
 
 def effective_coordinate_twist_deg() -> int:
-    """Extra CW rotation applied to raster *before* panel rotation — fixes swapped X/Y on some setups."""
     r = read_settings_file().get("coordinate_twist_deg")
     if r is not None:
         try:
@@ -96,7 +98,35 @@ def effective_coordinate_twist_deg() -> int:
                 return v
         except (TypeError, ValueError):
             pass
-    return _env_twist_deg()
+    return _env_int("PURIN_COORDINATE_TWIST_DEG", 0)
+
+
+def effective_mode() -> str:
+    data = read_settings_file()
+    m = str(data.get("mode", "")).lower()
+    return m if m in MODES else DEFAULT_MODE
+
+
+def effective_text_layout_dict() -> dict[str, Any]:
+    return {**DEFAULT_TEXT_LAYOUT, **read_settings_file().get("text", {})}
+
+
+# ── save helpers ──────────────────────────────────────────────────────────────
+
+def save_mode(mode: str, invert: bool, *, font_size: int = 0) -> None:
+    """Apply a named mode preset; update invert + optional font_size."""
+    if mode not in MODES:
+        mode = DEFAULT_MODE
+    preset = MODES[mode]
+    data = read_settings_file()
+    data["mode"]                 = mode
+    data["rotate"]               = preset["rotate"]
+    data["coordinate_twist_deg"] = preset["coordinate_twist_deg"]
+    data["invert"]               = bool(invert)
+    text = {**DEFAULT_TEXT_LAYOUT, **data.get("text", {})}
+    text["font_size"] = max(0, int(font_size))
+    data["text"] = text
+    _atomic_write(data)
 
 
 def save_settings(
@@ -105,7 +135,6 @@ def save_settings(
     *,
     coordinate_twist_deg: int | None = None,
 ) -> None:
-    """Rotation + polarity; optional twist. Preserves `text` block when present."""
     rotate = int(rotate) % 360
     if rotate not in _VALID_ROT:
         rotate = 0
@@ -121,10 +150,9 @@ def save_settings(
 
 
 def save_text_layout(updates: dict[str, Any]) -> None:
-    """Merge validated keys under `text`; keeps orientation keys."""
     if not isinstance(updates, dict):
         return
-    data = read_settings_file()
+    data   = read_settings_file()
     merged = {**DEFAULT_TEXT_LAYOUT, **data.get("text", {})}
     for key in DEFAULT_TEXT_LAYOUT:
         if key in updates:

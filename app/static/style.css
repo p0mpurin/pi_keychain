@@ -446,6 +446,64 @@ canvas#sketch {
   border: 0;
 }
 
+/* ── mode selector cards ──────────────────────────────────────────────── */
+.mode-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.mode-card {
+  flex: 1 1 120px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 18px 12px;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  cursor: pointer;
+  background: var(--card);
+  transition: background 0.15s, box-shadow 0.15s;
+  text-align: center;
+  user-select: none;
+}
+
+.mode-card input[type="radio"] {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.mode-card:hover {
+  background: var(--secondary);
+}
+
+.mode-card.active,
+.mode-card:has(input:checked) {
+  background: var(--accent-dim);
+  box-shadow: 0 0 12px var(--bubble-glow);
+  border-color: var(--accent-pink);
+}
+
+.mode-icon {
+  font-size: 1.6rem;
+  line-height: 1;
+  color: var(--accent-pink);
+}
+
+.mode-label {
+  font-size: 1rem;
+  font-weight: bold;
+  color: var(--foreground);
+}
+
+.mode-sub {
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
