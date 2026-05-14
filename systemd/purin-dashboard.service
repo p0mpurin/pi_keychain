@@ -6,20 +6,23 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=/home/purin/pi_keychain
-ExecStart=/home/purin/pi_keychain/.venv/bin/python -m app.main
+# Ink-style: system Python, no venv (match working epaper-display pattern).
+ExecStart=/usr/bin/python3 -m app.main
 Restart=always
 RestartSec=3
 User=root
 KillSignal=SIGTERM
-# E-ink SIGTERM paints "Safe to unplug" (often several seconds); increase if systemd still SIGKILLs.
 TimeoutStopSec=60
 Environment=PYTHONUNBUFFERED=1
-# Optional: PURIN_LOG_LEVEL=DEBUG or PURIN_LOG_HTTP=1 for werkzeug POST lines.
-# Environment=PURIN_LOG_LEVEL=DEBUG
-# gpiozero MUST use lgpio on Bookworm (RPi.GPIO edge-detect breaks on BUSY pin). Req: apt install python3-libgpiod2 + pip lgpio.
-Environment=GPIOZERO_PIN_FACTORY=lgpio
-# systemd runs as root: Path.home() is /root — point explicitly at purin's Waveshare clone.
+# App package imports (same idea as ink’s PYTHONPATH=/home/pi/epaper-display)
+Environment=PYTHONPATH=/home/purin/pi_keychain
+# Waveshare lib is still added inside app/epd.py; this points root’s search at purin’s clone:
 Environment=PURIN_EPAPER_LIB=/home/purin/e-Paper/RaspberryPi_JetsonNano/python/lib
+# Optional: PURIN_LOG_LEVEL=DEBUG , PURIN_LOG_HTTP=1
+#
+# ONLY if your on-disk epdconfig.py uses gpiozero AND you hit RPi edge-detect errors:
+# Environment=GPIOZERO_PIN_FACTORY=lgpio
+# (usually with: sudo apt install python3-lgpio)
 
 [Install]
 WantedBy=multi-user.target

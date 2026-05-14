@@ -2,78 +2,46 @@
 
 Portable Raspberry Pi Zero 2 W + Waveshare e-paper control plane (Wi‑Fi AP + Flask dashboard).
 
-Full task breakdown and acceptance criteria live in [`plan.md`](plan.md) at the repo root (development checkout may use another folder name — mirror it to `/home/purin/purin_pi` on device).
+Full task breakdown and acceptance criteria live in [`plan.md`](plan.md) at the repo root. The sample unit assumes `/home/purin/pi_keychain` — edit **`WorkingDirectory`**, **`PYTHONPATH`**, and **`PURIN_EPAPER_LIB`** if you install elsewhere (compare with a **known‑working** `systemctl cat` for your “ink” service).
 
 ## First boot on the Pi
 
-1. Clone this repo to `/home/purin/purin_pi` (adjust paths in `systemd/purin-dashboard.service` if you choose another location).
+1. Clone this repo to `/home/purin/pi_keychain` (or your path; keep unit paths in sync).
 2. Ensure Waveshare sources exist at `/home/purin/e-Paper` **without modifying them**.
 3. Confirm the panel module name matches `app/epd.py` → `PANEL_MODULE` (Task 1 in `plan.md`).
 4. Enable **SPI** (Raspberry Pi OS: **Raspberry Pi Configuration** → Interfaces → SPI, or `raspi-config`), then reboot if needed.
-5. **One-time system packages for building `lgpio`** (fixes **`swig failed: No such file or directory`**):
+5. **Ink-style stack — system Python, no venv** (same interpreter as **`ExecStart=/usr/bin/python3`** in `systemd/purin-dashboard.service`):
 
 ```bash
-cd ~/purin_pi    # or ~/pi_keychain
+cd ~/pi_keychain
 chmod +x scripts/install_pi_deps.sh
 ./scripts/install_pi_deps.sh
 ```
 
-(or manually: **`sudo apt-get install -y swig python3-dev gcc liblgpio-dev`**)
+That installs **`requirements.txt`** with **`sudo python3 -m pip install --break-system-packages …`** (normal on PEP‑668 Pi images).
 
-6. Install **`requirements.txt`** into the **same venv systemd uses** (see **`ExecStart`** in the unit):
-
-```bash
-cd ~/purin_pi   # or ~/pi_keychain
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-**What Waveshare’s current `epdconfig.py` needs on Raspberry Pi** (upstream [epdconfig.py](https://github.com/waveshareteam/e-Paper/blob/master/RaspberryPi_JetsonNano/python/lib/waveshare_epd/epdconfig.py)): when `/proc/cpuinfo` contains **`Raspberry`**, class **`RaspberryPi`** does **`import spidev`** and **`import gpiozero`**. It does **not** use **`RPi.GPIO`** in that path.
-
-Build helpers if **`pip install spidev`** fails:
+**Two possible Waveshare trees:** open **`…/python/lib/waveshare_epd/epdconfig.py`** → **`class RaspberryPi` → `__init__`** on your Pi. **Older** ink-style trees often use **`spidev` + `RPi.GPIO`** only (what `requirements.txt` targets). **Current** upstream [epdconfig.py](https://github.com/waveshareteam/e-Paper/blob/master/RaspberryPi_JetsonNano/python/lib/waveshare_epd/epdconfig.py) uses **`gpiozero`** (not **`RPi.GPIO`**) for pins. If imports fail after step 5:
 
 ```bash
-sudo apt-get install -y python3-dev python3-venv gcc
+sudo apt-get install -y python3-gpiozero python3-lgpio
+# Optionally uncomment in the unit:
+# Environment=GPIOZERO_PIN_FACTORY=lgpio
 ```
 
-**Raspberry Pi OS Bookworm / kernel 6.x:** Waveshare’s `gpiozero.Button(BUSY_PIN)` uses edge detection. Without **`lgpio`**, **`gpiozero`** falls back to **`RPi.GPIO`** → **`PinFactoryFallback`** / **`Failed to add edge detection`**.
+If you prefer **PyPI `lgpio`** instead of **`apt python3-lgpio`**, install build deps first: **`sudo apt-get install -y swig python3-dev gcc liblgpio-dev`**, then **`sudo python3 -m pip install --break-system-packages lgpio`**.
 
-Install build dependencies, then **`pip install -r`** (PyPI **`lgpio`** needs **SWIG** + headers):
+**Optional venv** (only if you insist on isolating packages): create **`.venv`**, change **`ExecStart`** to that interpreter, and **`pip install -r requirements.txt`** there — but then match **the same** Waveshare **`PYTHONPATH`** / env as your working setup.
+
+Quick check (same as **`ExecStart`** — adjust paths):
 
 ```bash
-sudo apt-get install -y swig python3-dev gcc liblgpio-dev
+/usr/bin/python3 -c "import spidev; print('spidev OK')"
+/usr/bin/python3 -c "import RPi.GPIO; print('RPi.GPIO OK')" 2>/dev/null || echo 'no RPi.GPIO (maybe gpiozero tree)'
+PYTHONPATH=/home/purin/pi_keychain:/home/purin/e-Paper/RaspberryPi_JetsonNano/python/lib \
+  /usr/bin/python3 -c "import waveshare_epd.epd2in13_V4; print('waveshare OK')"
 ```
 
-```bash
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-If you see **`error: command 'swig' failed`**, install **`swig`** as above. If **`pip`** still fails to compile **`lgpio`**, skip building and use distro Python bindings + a venv that can see them:
-
-```bash
-sudo apt-get install -y python3-lgpio
-cd ~/pi_keychain
-rm -rf .venv && python3 -m venv --system-site-packages .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-The **`purin-dashboard.service`** unit sets **`Environment=GPIOZERO_PIN_FACTORY=lgpio`** so **`gpiozero`** does not silently fall back to **`RPi.GPIO`**.
-
-Quick check ( **`lgpio` import**, then **Waveshare `epdconfig`** — same as first dashboard touch):
-
-```bash
-/home/purin/pi_keychain/.venv/bin/python -c "import lgpio; print('lgpio OK')"
-PYTHONPATH=/home/purin/e-Paper/RaspberryPi_JetsonNano/python/lib \
-GPIOZERO_PIN_FACTORY=lgpio \
-/home/purin/pi_keychain/.venv/bin/python -c "import waveshare_epd.epd2in13_V4; print('waveshare import OK')"
-```
-
-Your unit should **`ExecStart=.../.venv/bin/python -m app.main`** so **`pip install`** must run **inside that `.venv`**.
-
-7. Bring up the AP:
+6. Bring up the AP:
 
 ```bash
 export PURIN_PSK='choose-a-strong-password'
@@ -81,19 +49,19 @@ chmod +x scripts/*.sh
 ./scripts/setup_ap.sh
 ```
 
-8. Install captive DNS helper (NM shared dnsmasq):
+7. Install captive DNS helper (NM shared dnsmasq):
 
 ```bash
 ./scripts/install_captive_dnsmasq.sh
 ```
 
-9. Install and start the dashboard service:
+8. Install and start the dashboard service:
 
 ```bash
 ./scripts/install_service.sh
 ```
 
-10. Optional SD protection:
+9. Optional SD protection:
 
 ```bash
 ./scripts/enable_overlayroot.sh
@@ -171,9 +139,9 @@ When overlay root is enabled:
 
 ```bash
 sudo overlayroot-chroot
-cd /home/purin/purin_pi
+cd /home/purin/pi_keychain
 git pull
-pip install -r requirements.txt
+./scripts/install_pi_deps.sh   # or: sudo python3 -m pip install --break-system-packages -r requirements.txt
 exit
 sudo reboot
 ```
