@@ -233,17 +233,38 @@ class Display:
             logger.warning("EPD sleep failed: %s", e)
 
     def _draw_to_panel(self, image: Image.Image) -> None:
+        logger.info(
+            "EPD _draw_to_panel: PIL size=%sx%s mode=%s logical=%sx%s",
+            image.size[0],
+            image.size[1],
+            image.mode,
+            getattr(self, "width", "?"),
+            getattr(self, "height", "?"),
+        )
         epd = self._ensure_hardware()
+        logger.info("EPD: driver instance ready (module=%s)", PANEL_MODULE)
         if image.mode != "1":
             image = image.convert("1")
 
         def run() -> None:
             ok = False
+            logger.info(
+                "EPD: waiting for hardware mutex (thread=%s)",
+                threading.current_thread().name,
+            )
             with self._lock:
+                logger.info("EPD: mutex acquired — refresh begins")
                 try:
+                    logger.info("EPD: maybe_full_clean check (partial_count=%s)", self._partial_count)
                     self._maybe_full_clean(epd)
+                    logger.info("EPD: warm_boot_if_needed …")
                     self._warm_boot_if_needed(epd)
+                    logger.info(
+                        "EPD: calling driver init() — if logs stop here, BUSY/SPI is stuck (see README)"
+                    )
                     epd.init()
+                    logger.info("EPD: init() returned OK")
+                    logger.info("EPD: push_frame …")
                     ok = self._push_frame(epd, image)
                 except (IOError, OSError) as e:
                     logger.warning("EPD refresh failed: %s", e)
@@ -254,15 +275,23 @@ class Display:
                 if ok:
                     self._partial_count += 1
                     self._last_update_epoch = time.time()
+                logger.info("EPD: refresh path exit ok=%s", ok)
 
         run()
 
     def clear(self) -> None:
+        logger.info(
+            "EPD clear: waiting for hardware mutex (thread=%s)",
+            threading.current_thread().name,
+        )
         with self._lock:
+            logger.info("EPD clear: mutex acquired")
             try:
                 epd = self._ensure_hardware()
                 self._warm_boot_if_needed(epd)
+                logger.info("EPD clear: calling init()")
                 epd.init()
+                logger.info("EPD clear: init() returned; calling Clear(0xFF)")
                 epd.Clear(0xFF)
             except (IOError, OSError) as e:
                 logger.warning("EPD clear failed: %s", e)

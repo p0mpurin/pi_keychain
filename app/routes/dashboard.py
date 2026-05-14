@@ -27,6 +27,7 @@ DB_PATH = DATA_DIR / "purin.db"
 
 _db_conn = notes_feature.connect(DB_PATH)
 _db_lock = threading.Lock()
+_display_queue_lock = threading.Lock()
 
 _APP_START = time.time()
 
@@ -40,7 +41,7 @@ def _wifi_qr_payload() -> str:
 def _schedule_display(work, *, synchronous: bool = False) -> None:
     """Run display IO off the Flask request thread unless synchronous (signals)."""
 
-    def runner() -> None:
+    def run_work() -> None:
         logger.info("Display worker started")
         try:
             work()
@@ -50,9 +51,15 @@ def _schedule_display(work, *, synchronous: bool = False) -> None:
             logger.info("Display worker finished OK")
 
     if synchronous:
-        runner()
-    else:
-        threading.Thread(target=runner, daemon=True).start()
+        run_work()
+        return
+
+    def thread_main() -> None:
+        logger.info("Display job queued (waiting for single-flight lock)")
+        with _display_queue_lock:
+            run_work()
+
+    threading.Thread(target=thread_main, daemon=True).start()
 
 
 def _json_err(message: str, status: int = 400) -> tuple[dict[str, object], int]:
