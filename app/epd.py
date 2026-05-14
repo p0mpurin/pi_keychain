@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import logging
+import os
 import sys
 import threading
 import time
@@ -17,11 +18,45 @@ logger = logging.getLogger(__name__)
 # Task 1: confirm on hardware via examples; default until panel is verified.
 PANEL_MODULE = "epd2in13_V4"
 
-_EPAPER_LIB = Path.home() / "e-Paper/RaspberryPi_JetsonNano/python/lib"
-if _EPAPER_LIB.is_dir():
-    lib_str = str(_EPAPER_LIB.resolve())
-    if lib_str not in sys.path:
-        sys.path.insert(0, lib_str)
+
+def _epaper_lib_candidates() -> list[Path]:
+    """Paths to try for Waveshare's `waveshare_epd` package (order matters)."""
+    rel = Path("e-Paper/RaspberryPi_JetsonNano/python/lib")
+    raw = os.environ.get("PURIN_EPAPER_LIB", "").strip()
+    if raw:
+        return [Path(raw).expanduser().resolve()]
+    home = Path.home()
+    extra = []
+    eh = os.environ.get("PURIN_EPAPER_HOME", "").strip()
+    if eh:
+        extra.append(Path(eh).expanduser() / "RaspberryPi_JetsonNano/python/lib")
+    return [
+        *extra,
+        home / rel,
+        Path("/home/purin") / rel,
+        Path("/home/pi") / rel,
+    ]
+
+
+def _install_epaper_path() -> Path | None:
+    for cand in _epaper_lib_candidates():
+        try:
+            if cand.is_dir():
+                lib_str = str(cand.resolve())
+                if lib_str not in sys.path:
+                    sys.path.insert(0, lib_str)
+                logger.info("waveshare_epd: added to sys.path -> %s", lib_str)
+                return cand.resolve()
+        except OSError as e:
+            logger.debug("Skip e-Paper candidate %s: %s", cand, e)
+    logger.error(
+        "waveshare_epd: no library directory found. Install Waveshare e-Paper code and set "
+        "PURIN_EPAPER_LIB to the full path of .../python/lib (root's home is /root under systemd)."
+    )
+    return None
+
+
+_EPAPER_LIB: Path | None = _install_epaper_path()
 
 
 class Display:

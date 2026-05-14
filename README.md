@@ -60,6 +60,22 @@ The preset QR button reads `PURIN_PSK` (and `PURIN_AP_SSID`, default `purin-pi`)
 
 The captive portal mini-browser does not behave like Safari (cookies/session quirks). If the sheet misbehaves, dismiss it and open Safari manually to `http://10.42.0.1`.
 
+## Dashboard works but e‑ink never updates
+
+The systemd unit runs as **`root`**, so Python’s **`Path.home()` is `/root`**, not `/home/purin`. The app must find Waveshare’s Python libs under **`…/e-Paper/RaspberryPi_JetsonNano/python/lib`**.
+
+The shipped **`purin-dashboard.service`** sets **`PURIN_EPAPER_LIB=/home/purin/e-Paper/RaspberryPi_JetsonNano/python/lib`**. If your clone lives elsewhere, edit that path or set **`PURIN_EPAPER_HOME`** to the folder that contains **`RaspberryPi_JetsonNano/`**.
+
+After changing the unit:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart purin-dashboard
+journalctl -u purin-dashboard -n 30 --no-pager
+```
+
+You should see a line like **`waveshare_epd: added to sys.path -> …`**. If you see **`no library directory found`**, fix the path. Wrong panel driver: change **`PANEL_MODULE`** in **`app/epd.py`** to match your HAT (see Waveshare examples under **`python/examples/`**).
+
 ## Updating the app with overlayroot
 
 When overlay root is enabled:

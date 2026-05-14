@@ -13,6 +13,8 @@ User=root
 KillSignal=SIGTERM
 TimeoutStopSec=10
 Environment=PYTHONUNBUFFERED=1
+# systemd runs as root: Path.home() is /root — point explicitly at purin's Waveshare clone.
+Environment=PURIN_EPAPER_LIB=/home/purin/e-Paper/RaspberryPi_JetsonNano/python/lib
 
 [Install]
 WantedBy=multi-user.target
