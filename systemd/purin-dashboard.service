@@ -5,8 +5,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/home/purin/purin_pi
-ExecStart=/usr/bin/python3 -m app.main
+WorkingDirectory=/home/purin/pi_keychain
+ExecStart=/home/purin/pi_keychain/.venv/bin/python -m app.main
 Restart=always
 RestartSec=3
 User=root
