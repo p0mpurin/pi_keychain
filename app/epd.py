@@ -94,6 +94,7 @@ def _float_env(name: str, default: float) -> float:
         return default
 
 
+class Display:
     """Lazy-init panel driver with locking, ghosting mitigation, and safe SPI handling."""
 
     width: int
