@@ -10,7 +10,17 @@ Full task breakdown and acceptance criteria live in [`plan.md`](plan.md) at the 
 2. Ensure Waveshare sources exist at `/home/purin/e-Paper` **without modifying them**.
 3. Confirm the panel module name matches `app/epd.py` → `PANEL_MODULE` (Task 1 in `plan.md`).
 4. Enable **SPI** (Raspberry Pi OS: **Raspberry Pi Configuration** → Interfaces → SPI, or `raspi-config`), then reboot if needed.
-5. Install **`requirements.txt`** into the **same venv systemd uses** (see **`ExecStart`** in the unit):
+5. **One-time system packages for building `lgpio`** (fixes **`swig failed: No such file or directory`**):
+
+```bash
+cd ~/purin_pi    # or ~/pi_keychain
+chmod +x scripts/install_pi_deps.sh
+./scripts/install_pi_deps.sh
+```
+
+(or manually: **`sudo apt-get install -y swig python3-dev gcc liblgpio-dev`**)
+
+6. Install **`requirements.txt`** into the **same venv systemd uses** (see **`ExecStart`** in the unit):
 
 ```bash
 cd ~/purin_pi   # or ~/pi_keychain
@@ -63,7 +73,7 @@ GPIOZERO_PIN_FACTORY=lgpio \
 
 Your unit should **`ExecStart=.../.venv/bin/python -m app.main`** so **`pip install`** must run **inside that `.venv`**.
 
-6. Bring up the AP:
+7. Bring up the AP:
 
 ```bash
 export PURIN_PSK='choose-a-strong-password'
@@ -71,19 +81,19 @@ chmod +x scripts/*.sh
 ./scripts/setup_ap.sh
 ```
 
-7. Install captive DNS helper (NM shared dnsmasq):
+8. Install captive DNS helper (NM shared dnsmasq):
 
 ```bash
 ./scripts/install_captive_dnsmasq.sh
 ```
 
-8. Install and start the dashboard service:
+9. Install and start the dashboard service:
 
 ```bash
 ./scripts/install_service.sh
 ```
 
-9. Optional SD protection:
+10. Optional SD protection:
 
 ```bash
 ./scripts/enable_overlayroot.sh

@@ -1,6 +1,6 @@
-# Web UI
-Flask>=3.0
-Pillow>=10.0
+# Web UI — on Raspberry Pi BEFORE pip install, run ./scripts/install_pi_deps.sh once
+# or: sudo apt-get install -y swig python3-dev gcc liblgpio-dev
+Flask>=3.0Pillow>=10.0
 qrcode[pil]>=7.4
 
 # ── Waveshare e-Paper (Raspberry Pi) — matches upstream epdconfig “RaspberryPi” class ──
