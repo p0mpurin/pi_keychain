@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Notes · Purin Pi{% endblock %}
+{% block content %}
+<section class="card stack">
+  <h2>Notes & todos</h2>
+  <form method="post" action="{{ url_for('dashboard.notes_page') }}" class="stack">
+    <input type="hidden" name="action" value="add" />
+    <label for="body">New item</label>
+    <textarea id="body" name="body" rows="3" placeholder="Remember to …"></textarea>
+    <button class="btn primary" type="submit">Add</button>
+  </form>
+</section>
+
+<section class="card">
+  <div class="row spread">
+    <h3>Open items</h3>
+    <form method="post" action="{{ url_for('dashboard.notes_send_screen') }}">
+      <button class="btn" type="submit">Send list to screen</button>
+    </form>
+  </div>
+  {% if notes %}
+    <ul class="notes">
+      {% for n in notes %}
+        <li class="note {% if n.done %}done{% endif %}">
+          <span class="note-body">{{ n.body }}</span>
+          <div class="note-actions">
+            <form method="post" action="{{ url_for('dashboard.notes_toggle', note_id=n.id) }}">
+              <button class="btn small" type="submit">{% if n.done %}Reopen{% else %}Done{% endif %}</button>
+            </form>
+            <form method="post" action="{{ url_for('dashboard.notes_delete', note_id=n.id) }}" onsubmit="return confirm('Delete this note?');">
+              <button class="btn small danger" type="submit">Delete</button>
+            </form>
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="muted">No notes yet.</p>
+  {% endif %}
+</section>
+{% endblock %}

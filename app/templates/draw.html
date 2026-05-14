@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Draw · Purin Pi{% endblock %}
+{% block content %}
+<section class="card">
+  <h2>Sketch pad</h2>
+  <p class="muted">Panel target: {{ panel_w }}×{{ panel_h }} px. Strokes scale to fit.</p>
+  <div class="canvas-wrap">
+    <canvas
+      id="sketch"
+      width="600"
+      height="300"
+      data-panel-w="{{ panel_w }}"
+      data-panel-h="{{ panel_h }}"
+      aria-label="Drawing area"
+    ></canvas>
+  </div>
+  <div class="toolbar">
+    <button class="btn" type="button" id="clear-canvas">Erase</button>
+    <button class="btn primary" type="button" id="send-canvas">Send to screen</button>
+    <span id="draw-status" class="muted" role="status"></span>
+  </div>
+</section>
+<script src="{{ url_for('static', filename='draw.js') }}"></script>
+{% endblock %}

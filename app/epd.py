@@ -1,0 +1,187 @@
+"""Thread-safe e-ink display wrapper (Waveshare via ~/e-Paper)."""
+
+from __future__ import annotations
+
+import importlib
+import logging
+import sys
+import threading
+import time
+from pathlib import Path
+from typing import Any, Callable
+
+from PIL import Image, ImageDraw, ImageFont
+
+logger = logging.getLogger(__name__)
+
+# Task 1: confirm on hardware via examples; default until panel is verified.
+PANEL_MODULE = "epd2in13_V4"
+
+_EPAPER_LIB = Path.home() / "e-Paper/RaspberryPi_JetsonNano/python/lib"
+if _EPAPER_LIB.is_dir():
+    lib_str = str(_EPAPER_LIB.resolve())
+    if lib_str not in sys.path:
+        sys.path.insert(0, lib_str)
+
+
+class Display:
+    """Lazy-init panel driver with locking, ghosting mitigation, and safe SPI handling."""
+
+    width: int
+    height: int
+
+    def __init__(self, rotate: int = 0) -> None:
+        self._rotate = rotate % 360
+        self._lock = threading.Lock()
+        self._epd: Any | None = None
+        self._partial_count = 0
+        self._epd_cls: Callable[[], Any] | None = None
+        self._last_update_epoch: float | None = None
+
+    @property
+    def last_update_epoch(self) -> float | None:
+        return self._last_update_epoch
+
+    def _load_driver_class(self) -> Callable[[], Any]:
+        if self._epd_cls is not None:
+            return self._epd_cls
+        try:
+            mod = importlib.import_module(f"waveshare_epd.{PANEL_MODULE}")
+        except ImportError as e:
+            logger.error("Cannot import waveshare_epd.%s: %s", PANEL_MODULE, e)
+            raise
+        epd_cls = getattr(mod, "EPD", None)
+        if epd_cls is None:
+            raise RuntimeError(f"waveshare_epd.{PANEL_MODULE} has no EPD class")
+        self._epd_cls = epd_cls
+        return epd_cls
+
+    def probe_size(self) -> tuple[int, int]:
+        """Ensure the driver is loaded and return logical width/height."""
+        self._ensure_hardware()
+        return self.width, self.height
+
+    def _ensure_hardware(self) -> Any:
+        if self._epd is not None:
+            return self._epd
+        with self._lock:
+            if self._epd is not None:
+                return self._epd
+            cls = self._load_driver_class()
+            epd = cls()
+            w = int(getattr(epd, "width", getattr(epd, "WIDTH", 0)))
+            h = int(getattr(epd, "height", getattr(epd, "HEIGHT", 0)))
+            if self._rotate in (90, 270):
+                w, h = h, w
+            self.width, self.height = w, h
+            self._epd = epd
+            logger.info("EPD initialized module=%s size=%sx%s", PANEL_MODULE, w, h)
+        return self._epd
+
+    def _maybe_full_clean(self, epd: Any) -> None:
+        if self._partial_count < 10:
+            return
+        try:
+            epd.init()
+            epd.Clear(0xFF)
+        except (IOError, OSError) as e:
+            logger.warning("Full clean failed: %s", e)
+        finally:
+            self._partial_count = 0
+
+    def _draw_to_panel(self, image: Image.Image) -> None:
+        epd = self._ensure_hardware()
+        if image.mode != "1":
+            image = image.convert("1")
+        if image.size != (self.width, self.height):
+            image = image.resize((self.width, self.height), Image.Resampling.LANCZOS).convert(
+                "1"
+            )
+
+        def run() -> None:
+            with self._lock:
+                try:
+                    self._maybe_full_clean(epd)
+                    epd.init()
+                    buf_fn = getattr(epd, "getbuffer", None)
+                    if callable(buf_fn):
+                        epd.display(buf_fn(image))
+                    else:
+                        epd.display(image)
+                except (IOError, OSError) as e:
+                    logger.warning("EPD refresh failed: %s", e)
+                    return
+                finally:
+                    try:
+                        epd.sleep()
+                    except (IOError, OSError) as e:
+                        logger.warning("EPD sleep failed: %s", e)
+                self._partial_count += 1
+                self._last_update_epoch = time.time()
+
+        run()
+
+    def clear(self) -> None:
+        with self._lock:
+            try:
+                epd = self._ensure_hardware()
+                epd.init()
+                epd.Clear(0xFF)
+            except (IOError, OSError) as e:
+                logger.warning("EPD clear failed: %s", e)
+                return
+            finally:
+                try:
+                    if self._epd is not None:
+                        self._epd.sleep()
+                except (IOError, OSError) as e:
+                    logger.warning("EPD sleep after clear failed: %s", e)
+            self._partial_count = 0
+            self._last_update_epoch = time.time()
+
+    def show_image(self, img: Image.Image) -> None:
+        if self._rotate:
+            img = img.rotate(-self._rotate, expand=True, fillcolor=255)
+        self._draw_to_panel(img)
+
+    def show_text(self, text: str, font_size: int = 18) -> None:
+        self._ensure_hardware()
+        img = Image.new("1", (self.width, self.height), 255)
+        draw = ImageDraw.Draw(img)
+        try:
+            font = ImageFont.truetype(
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", font_size
+            )
+        except OSError:
+            font = ImageFont.load_default()
+        margin = 4
+        draw.multiline_text(
+            (margin, margin),
+            text,
+            fill=0,
+            font=font,
+            spacing=4,
+        )
+        self.show_image(img)
+
+    def shutdown(self) -> None:
+        with self._lock:
+            if self._epd is None:
+                return
+            try:
+                self._epd.sleep()
+            except (IOError, OSError) as e:
+                logger.warning("EPD shutdown sleep failed: %s", e)
+
+
+_singleton: Display | None = None
+_singleton_lock = threading.Lock()
+
+
+def get_display() -> Display:
+    """Process-wide display instance (panel ownership lives here)."""
+    global _singleton
+    with _singleton_lock:
+        if _singleton is None:
+            _singleton = Display()
+        return _singleton

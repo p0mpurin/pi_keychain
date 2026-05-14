@@ -1,0 +1,18 @@
+[Unit]
+Description=Purin Pi Dashboard
+After=network-online.target NetworkManager.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/purin/purin_pi
+ExecStart=/usr/bin/python3 -m app.main
+Restart=always
+RestartSec=3
+User=root
+KillSignal=SIGTERM
+TimeoutStopSec=10
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

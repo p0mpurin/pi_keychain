@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Text · Purin Pi{% endblock %}
+{% block content %}
+<section class="card">
+  <h2>Send text to e-ink</h2>
+  <form method="post" action="{{ url_for('dashboard.api_text') }}" class="stack">
+    <label for="msg">Message</label>
+    <textarea id="msg" name="msg" rows="5" required placeholder="Line breaks are kept."></textarea>
+    <button class="btn primary" type="submit">Push to screen</button>
+  </form>
+</section>
+
+<section class="card row">
+  <form method="post" action="{{ url_for('dashboard.api_clear') }}">
+    <button class="btn danger" type="submit">Clear screen</button>
+  </form>
+  <form method="post" action="{{ url_for('dashboard.api_clock') }}">
+    <label class="sr" for="tz">Time zone</label>
+    <input id="tz" name="tz" type="text" value="UTC" class="grow" />
+    <button class="btn" type="submit">Show clock</button>
+  </form>
+</section>
+{% endblock %}

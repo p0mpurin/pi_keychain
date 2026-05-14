@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}QR · Purin Pi{% endblock %}
+{% block content %}
+<section class="card">
+  <h2>QR code</h2>
+  <form method="post" action="{{ url_for('dashboard.api_qr') }}" class="stack">
+    <label for="data">Payload</label>
+    <textarea id="data" name="data" rows="6" required placeholder="Any text or URL"></textarea>
+    <div class="row wrap">
+      <button class="btn" type="button" id="preset-wifi">Use AP Wi‑Fi string</button>
+      <button class="btn" type="button" id="preset-contact">Contact card</button>
+    </div>
+    <button class="btn primary" type="submit">Show QR</button>
+  </form>
+</section>
+
+<script>
+  const wifi = {{ wifi_payload | tojson }};
+  const contact = {{ contact_preset | tojson }};
+  document.getElementById('preset-wifi').addEventListener('click', () => {
+    document.getElementById('data').value = wifi;
+  });
+  document.getElementById('preset-contact').addEventListener('click', () => {
+    document.getElementById('data').value = contact;
+  });
+</script>
+{% endblock %}
