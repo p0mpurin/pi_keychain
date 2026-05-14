@@ -74,7 +74,22 @@ sudo systemctl restart purin-dashboard
 journalctl -u purin-dashboard -n 30 --no-pager
 ```
 
-You should see a line like **`waveshare_epd: added to sys.path -> …`**. If you see **`no library directory found`**, fix the path. Wrong panel driver: change **`PANEL_MODULE`** in **`app/epd.py`** to match your HAT (see Waveshare examples under **`python/examples/`**).
+You should see a line like **`waveshare_epd: added to sys.path → …`**. If you see **`no library directory found`**, fix the path. Wrong panel driver: change **`PANEL_MODULE`** in **`app/epd.py`** to match your HAT (see Waveshare examples under **`python/examples/`**).
+
+### Log noise: werkzeug vs e‑paper
+
+`/api/clear` and other routes show **`POST … werkzeug`** lines at **INFO**; that proves the browser talked to Flask, **not** that SPI ran. Startup also logs **`waveshare_epd: added …`**.
+
+With current code **`werkzeug` is turned down unless** you set **`PURIN_LOG_HTTP=1`**, so **`journalctl -u purin-dashboard -f`** should show **`app.epd`** lines after each refresh, e.g. **`EPD clear complete`** and **`EPD pushed frame`** (buffer bytes, dimensions).
+
+- Debug everything: **`Environment=PURIN_LOG_LEVEL=DEBUG`** under **`[Service]`**
+- Restore per-request **`POST /…`** logs: **`Environment=PURIN_LOG_HTTP=1`**
+
+Follow live logs:
+
+```bash
+sudo journalctl -u purin-dashboard -f
+```
 
 ### Match a legacy app or save power between frames
 

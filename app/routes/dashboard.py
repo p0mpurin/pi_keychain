@@ -41,10 +41,13 @@ def _schedule_display(work, *, synchronous: bool = False) -> None:
     """Run display IO off the Flask request thread unless synchronous (signals)."""
 
     def runner() -> None:
+        logger.info("Display worker started")
         try:
             work()
         except Exception:
             logger.exception("Display worker failed")
+        else:
+            logger.info("Display worker finished OK")
 
     if synchronous:
         runner()

@@ -169,7 +169,12 @@ class Display:
                 time.sleep(delay)
         except (IOError, OSError) as e:
             logger.warning("EPD warm boot failed: %s", e)
+            return
         self._warm_boot_done = True
+        logger.info(
+            "EPD warm boot done (module=%s) — matched Waveshare flow: init → Clear(0xFF)",
+            PANEL_MODULE,
+        )
 
     @staticmethod
     def _panel_variants(base: Image.Image, target_w: int, target_h: int) -> list[Image.Image]:
@@ -197,7 +202,19 @@ class Display:
                 if not callable(buf_fn):
                     logger.error("EPD driver has no getbuffer(); cannot push frame")
                     return False
-                epd.display(buf_fn(frame))
+                buf = buf_fn(frame)
+                epd.display(buf)
+                logger.info(
+                    "EPD pushed frame %sx%s (%d bytes RAM) variant=%sx%s→%sx%s module=%s",
+                    tw,
+                    th,
+                    len(buf) if hasattr(buf, "__len__") else -1,
+                    cand.size[0],
+                    cand.size[1],
+                    tw,
+                    th,
+                    PANEL_MODULE,
+                )
                 return True
             except (IOError, OSError) as e:
                 last_err = e
@@ -250,6 +267,7 @@ class Display:
             except (IOError, OSError) as e:
                 logger.warning("EPD clear failed: %s", e)
                 return
+            logger.info("EPD clear complete Clear(0xFF) module=%s", PANEL_MODULE)
             self._partial_count = 0
             self._last_update_epoch = time.time()
 

@@ -14,11 +14,23 @@ from app.epd import get_display
 from app.routes import captive, dashboard
 
 
-def create_app() -> Flask:
+def _configure_logging() -> None:
+    raw = os.environ.get("PURIN_LOG_LEVEL", "INFO").strip().upper()
+    level = getattr(logging, raw, logging.INFO)
     logging.basicConfig(
-        level=logging.INFO,
+        level=level,
         format="%(levelname)s %(name)s %(message)s",
+        force=True,
     )
+    # By default hide per-request werkzeug spam so hardware logs stay visible.
+    if os.environ.get("PURIN_LOG_HTTP", "").strip().lower() in ("1", "true", "yes", "on"):
+        logging.getLogger("werkzeug").setLevel(logging.INFO)
+    else:
+        logging.getLogger("werkzeug").setLevel(logging.WARNING)
+
+
+def create_app() -> Flask:
+    _configure_logging()
     here = Path(__file__).resolve().parent
     app = Flask(
         __name__,
