@@ -27,21 +27,38 @@ Build helpers if **`pip install spidev`** fails:
 sudo apt-get install -y python3-dev python3-venv gcc
 ```
 
-**Raspberry Pi OS Bookworm / newer kernels:** `gpiozero` often needs the **`lgpio`** backend. Prefer the distro package, then either:
-
-- run with **`GPIOZERO_PIN_FACTORY=lgpio`**, or  
-- create the venv with **`python3 -m venv --system-site-packages .venv`** after **`sudo apt install python3-lgpio`**.
-
-Optional in **`purin-dashboard.service`** under **`[Service]`**:
-
-```ini
-Environment=GPIOZERO_PIN_FACTORY=lgpio
-```
-
-Verify imports **with the venv Python** (same as **`ExecStart`**):
+**Raspberry Pi OS Bookworm / kernel 6.x:** Waveshare’s `gpiozero.Button(BUSY_PIN)` uses edge detection. If **`lgpio`** is missing, **`gpiozero`** falls back to **`RPi.GPIO`** and you get **`PinFactoryFallback: Falling back from lgpio`** then **`RuntimeError: Failed to add edge detection`**. Fix:
 
 ```bash
-/home/purin/pi_keychain/.venv/bin/python -c "import spidev, gpiozero; print('ok')"
+sudo apt-get install -y python3-dev liblgpio-dev  # Debian lgpio headers; PyPI builds or links the `pip` binding
+```
+
+Then reinstall your venv packages ( **`lgpio`** is pinned in **`requirements.txt`**):
+
+```bash
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+If **`pip install lgpio`** fails, pull in distro bindings and recreate the venv:
+
+```bash
+sudo apt-get install -y python3-lgpio
+cd ~/pi_keychain
+rm -rf .venv && python3 -m venv --system-site-packages .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+The **`purin-dashboard.service`** unit sets **`Environment=GPIOZERO_PIN_FACTORY=lgpio`** so **`gpiozero`** does not silently fall back to **`RPi.GPIO`**.
+
+Quick check ( **`lgpio` import**, then **Waveshare `epdconfig`** — same as first dashboard touch):
+
+```bash
+/home/purin/pi_keychain/.venv/bin/python -c "import lgpio; print('lgpio OK')"
+PYTHONPATH=/home/purin/e-Paper/RaspberryPi_JetsonNano/python/lib \
+GPIOZERO_PIN_FACTORY=lgpio \
+/home/purin/pi_keychain/.venv/bin/python -c "import waveshare_epd.epd2in13_V4; print('waveshare import OK')"
 ```
 
 Your unit should **`ExecStart=.../.venv/bin/python -m app.main`** so **`pip install`** must run **inside that `.venv`**.

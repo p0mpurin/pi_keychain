@@ -14,3 +14,6 @@ qrcode[pil]>=7.4
 
 spidev>=3.6
 gpiozero>=2.0
+# Prefer over RPi.GPIO on Pi OS Bookworm / kernel 6.x (avoids gpiozero.Button edge-detect crashes on BUSY).
+# If `pip install` fails, use `sudo apt install python3-lgpio` and recreate venv with --system-site-packages.
+lgpio>=0.2; sys_platform == "linux"

@@ -16,8 +16,8 @@ TimeoutStopSec=60
 Environment=PYTHONUNBUFFERED=1
 # Optional: PURIN_LOG_LEVEL=DEBUG or PURIN_LOG_HTTP=1 for werkzeug POST lines.
 # Environment=PURIN_LOG_LEVEL=DEBUG
-# Optional: force gpiozero’s lgpio backend on Bookworm (after: apt install python3-lgpio)
-# Environment=GPIOZERO_PIN_FACTORY=lgpio
+# gpiozero MUST use lgpio on Bookworm (RPi.GPIO edge-detect breaks on BUSY pin). Req: apt install python3-libgpiod2 + pip lgpio.
+Environment=GPIOZERO_PIN_FACTORY=lgpio
 # systemd runs as root: Path.home() is /root — point explicitly at purin's Waveshare clone.
 Environment=PURIN_EPAPER_LIB=/home/purin/e-Paper/RaspberryPi_JetsonNano/python/lib
 
