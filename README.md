@@ -9,7 +9,8 @@ Full task breakdown and acceptance criteria live in [`plan.md`](plan.md) at the 
 1. Clone this repo to `/home/purin/purin_pi` (adjust paths in `systemd/purin-dashboard.service` if you choose another location).
 2. Ensure Waveshare sources exist at `/home/purin/e-Paper` **without modifying them**.
 3. Confirm the panel module name matches `app/epd.py` → `PANEL_MODULE` (Task 1 in `plan.md`).
-4. Install deps:
+4. Enable **SPI** (Raspberry Pi OS: **Raspberry Pi Configuration** → Interfaces → SPI, or `raspi-config`), then reboot if needed.
+5. Install deps (includes **`spidev`** and **`RPi.GPIO`** for Waveshare’s `epdconfig`):
 
 ```bash
 cd ~/purin_pi
@@ -20,7 +21,7 @@ pip install -r requirements.txt
 
 For systemd we call system Python (`/usr/bin/python3 -m app.main`); install packages system-wide **or** change `ExecStart` to your venv interpreter.
 
-5. Bring up the AP:
+6. Bring up the AP:
 
 ```bash
 export PURIN_PSK='choose-a-strong-password'
@@ -28,19 +29,19 @@ chmod +x scripts/*.sh
 ./scripts/setup_ap.sh
 ```
 
-6. Install captive DNS helper (NM shared dnsmasq):
+7. Install captive DNS helper (NM shared dnsmasq):
 
 ```bash
 ./scripts/install_captive_dnsmasq.sh
 ```
 
-7. Install and start the dashboard service:
+8. Install and start the dashboard service:
 
 ```bash
 ./scripts/install_service.sh
 ```
 
-8. Optional SD protection:
+9. Optional SD protection:
 
 ```bash
 ./scripts/enable_overlayroot.sh
