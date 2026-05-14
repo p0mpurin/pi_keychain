@@ -11,8 +11,11 @@ Restart=always
 RestartSec=3
 User=root
 KillSignal=SIGTERM
-TimeoutStopSec=10
-Environment=PURIN_LOG_LEVEL=DEBUG
+# E-ink SIGTERM paints "Safe to unplug" (often several seconds); increase if systemd still SIGKILLs.
+TimeoutStopSec=60
+Environment=PYTHONUNBUFFERED=1
+# Optional: PURIN_LOG_LEVEL=DEBUG or PURIN_LOG_HTTP=1 for werkzeug POST lines.
+# Environment=PURIN_LOG_LEVEL=DEBUG
 # systemd runs as root: Path.home() is /root — point explicitly at purin's Waveshare clone.
 Environment=PURIN_EPAPER_LIB=/home/purin/e-Paper/RaspberryPi_JetsonNano/python/lib
 
