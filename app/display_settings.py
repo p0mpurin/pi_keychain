@@ -107,13 +107,21 @@ def effective_mode() -> str:
     return m if m in MODES else DEFAULT_MODE
 
 
+def effective_correct_180() -> bool:
+    """Whether to flip the raster 180° — corrects for upside-down mount (ports on top)."""
+    data = read_settings_file()
+    if "correct_180" in data:
+        return bool(data["correct_180"])
+    return True  # default: ports on top
+
+
 def effective_text_layout_dict() -> dict[str, Any]:
     return {**DEFAULT_TEXT_LAYOUT, **read_settings_file().get("text", {})}
 
 
 # ── save helpers ──────────────────────────────────────────────────────────────
 
-def save_mode(mode: str, invert: bool, *, font_size: int = 0) -> None:
+def save_mode(mode: str, invert: bool, *, font_size: int = 0, correct_180: bool = True) -> None:
     """Apply a named mode preset; update invert + optional font_size."""
     if mode not in MODES:
         mode = DEFAULT_MODE
@@ -123,6 +131,7 @@ def save_mode(mode: str, invert: bool, *, font_size: int = 0) -> None:
     data["rotate"]               = preset["rotate"]
     data["coordinate_twist_deg"] = preset["coordinate_twist_deg"]
     data["invert"]               = bool(invert)
+    data["correct_180"]          = bool(correct_180)
     text = {**DEFAULT_TEXT_LAYOUT, **data.get("text", {})}
     text["font_size"] = max(0, int(font_size))
     data["text"] = text

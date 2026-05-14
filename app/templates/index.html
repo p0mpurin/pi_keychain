@@ -25,6 +25,10 @@
       <input type="checkbox" name="invert" value="on" {% if epd_invert %}checked{% endif %} />
       <span>Invert colours (swap black ↔ white)</span>
     </label>
+    <label class="row tight">
+      <input type="checkbox" name="correct_180" value="on" {% if epd_correct_180 %}checked{% endif %} />
+      <span>Ports on top — flip 180° to correct for upside-down mount <em>(leave on)</em></span>
+    </label>
     <button class="btn primary" type="submit">Apply mode</button>
   </form>
 </section>

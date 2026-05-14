@@ -12,6 +12,7 @@ from flask import Blueprint, flash, redirect, render_template, request, url_for
 
 from app.display_settings import (
     MODES,
+    effective_correct_180,
     effective_mode,
     effective_text_layout_dict,
     save_mode,
@@ -116,6 +117,7 @@ def index():
         epd_rotate=disp.rotation_degrees,
         epd_invert=disp.invert_bits,
         epd_mode=effective_mode(),
+        epd_correct_180=disp.correct_180,
         text_layout=effective_text_layout_dict(),
     )
 
@@ -195,17 +197,19 @@ def api_text_layout():
 
 @bp.post("/api/mode")
 def api_mode():
-    """Set horizontal/vertical mode + invert + font_size in one click."""
+    """Set horizontal/vertical mode + invert + font_size + correct_180."""
     ct      = (request.content_type or "").split(";")[0].strip().lower()
     payload = request.get_json(silent=True) if ct == "application/json" else None
 
     if isinstance(payload, dict):
-        mode      = str(payload.get("mode", "horizontal")).lower()
-        inv       = bool(payload.get("invert", False))
-        font_size = int(payload.get("font_size", 0))
+        mode        = str(payload.get("mode", "horizontal")).lower()
+        inv         = bool(payload.get("invert", False))
+        font_size   = int(payload.get("font_size", 0))
+        correct_180 = bool(payload.get("correct_180", True))
     else:
         mode      = str(request.form.get("mode", "horizontal")).lower()
         inv       = request.form.get("invert") == "on"
+        correct_180 = request.form.get("correct_180") == "on"
         try:
             font_size = int(request.form.get("font_size", 0))
         except (TypeError, ValueError):
@@ -215,15 +219,16 @@ def api_mode():
         mode = "horizontal"
 
     preset = MODES[mode]
-    save_mode(mode, inv, font_size=font_size)
+    save_mode(mode, inv, font_size=font_size, correct_180=correct_180)
 
     disp = get_display()
     disp.set_rotation(preset["rotate"])
     disp.set_invert(inv)
     disp.set_coordinate_twist_degrees(preset["coordinate_twist_deg"])
+    disp.set_correct_180(correct_180)
 
     if isinstance(payload, dict):
-        return {"ok": True, "mode": mode, "rotate": preset["rotate"], "invert": inv}
+        return {"ok": True, "mode": mode, "rotate": preset["rotate"], "invert": inv, "correct_180": correct_180}
 
     flash(f"Mode set to {mode}.", "info")
     return redirect(url_for("dashboard.index"))

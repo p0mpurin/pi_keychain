@@ -32,6 +32,7 @@ from PIL import Image, ImageOps
 
 from app.display_settings import (
     effective_coordinate_twist_deg,
+    effective_correct_180,
     effective_invert,
     effective_rotate,
     effective_text_layout_dict,
@@ -105,11 +106,19 @@ class Display:
     width: int
     height: int
 
-    def __init__(self, rotate: int = 0, invert: bool = False, coordinate_twist_deg: int = 0) -> None:
+    def __init__(
+        self,
+        rotate: int = 0,
+        invert: bool = False,
+        coordinate_twist_deg: int = 0,
+        correct_180: bool = True,
+    ) -> None:
         self._rotate = rotate % 360
         self._invert = bool(invert)
         t = int(coordinate_twist_deg) % 360
         self._twist_deg = t if t in (0, 90, 180, 270) else 0
+        # Flip the raster 180° to correct for upside-down mount (ports on top).
+        self._correct_180 = bool(correct_180)
         self._base_w: int | None = None
         self._base_h: int | None = None
         self.width = 0
@@ -165,6 +174,14 @@ class Display:
     def set_invert(self, invert: bool) -> None:
         with self._lock:
             self._invert = bool(invert)
+
+    @property
+    def correct_180(self) -> bool:
+        return self._correct_180
+
+    def set_correct_180(self, value: bool) -> None:
+        with self._lock:
+            self._correct_180 = bool(value)
 
     def _load_driver_class(self) -> Callable[[], Any]:
         if self._epd_cls is not None:
@@ -237,52 +254,29 @@ class Display:
             PANEL_MODULE,
         )
 
-    @staticmethod
-    def _panel_variants(base: Image.Image, target_w: int, target_h: int) -> list[Image.Image]:
-        """When the frame is not already panel-sized, try 0°/90°/270° like the working ink stack."""
-        im = base.convert("1")
-        if im.size == (target_w, target_h):
-            return [im]
-        return [
-            im,
-            im.rotate(90, expand=True, fillcolor=255),
-            im.rotate(270, expand=True, fillcolor=255),
-        ]
-
     def _push_frame(self, epd: Any, image: Image.Image) -> bool:
-        """Send a 1-bit frame; return True if display() succeeded."""
+        """Send a 1-bit frame to the panel.
+
+        The Waveshare epd2in13_V4 getbuffer() natively handles both:
+          • (122, 250) portrait  — used as-is
+          • (250, 122) landscape — rotated CCW 90° internally before scanning
+        Never resize; resizing changes the axis mapping and squishes text.
+        """
         buf_fn = getattr(epd, "getbuffer", None)
-        tw, th = self.width, self.height
-        variants = self._panel_variants(image, tw, th)
-        last_err: OSError | IOError | None = None
-        for cand in variants:
-            try:
-                frame = cand.convert("1")
-                if frame.size != (tw, th):
-                    frame = frame.resize((tw, th), Image.Resampling.LANCZOS).convert("1")
-                if not callable(buf_fn):
-                    logger.error("EPD driver has no getbuffer(); cannot push frame")
-                    return False
-                buf = buf_fn(frame)
-                epd.display(buf)
-                logger.info(
-                    "EPD pushed frame %sx%s (%d bytes RAM) variant=%sx%s→%sx%s module=%s",
-                    tw,
-                    th,
-                    len(buf) if hasattr(buf, "__len__") else -1,
-                    cand.size[0],
-                    cand.size[1],
-                    tw,
-                    th,
-                    PANEL_MODULE,
-                )
-                return True
-            except (IOError, OSError) as e:
-                last_err = e
-                logger.debug("EPD variant push failed (%sx%s→%sx%s): %s", cand.size[0], cand.size[1], tw, th, e)
-        if last_err is not None:
-            logger.warning("EPD refresh failed (exhausted rotations): %s", last_err)
-        return False
+        if not callable(buf_fn):
+            logger.error("EPD driver has no getbuffer(); cannot push frame")
+            return False
+        try:
+            buf = buf_fn(image.convert("1"))
+            epd.display(buf)
+            logger.info(
+                "EPD pushed frame %sx%s module=%s",
+                image.size[0], image.size[1], PANEL_MODULE,
+            )
+            return True
+        except (IOError, OSError) as e:
+            logger.warning("EPD push_frame failed: %s", e)
+            return False
 
     def _sleep_panel(self, epd: Any) -> None:
         # Waveshare's stock demo does NOT call epd.sleep() between frames; sleep() runs module_exit().
@@ -363,10 +357,15 @@ class Display:
             self._last_update_epoch = time.time()
 
     def show_image(self, img: Image.Image) -> None:
-        if self._twist_deg:
-            img = img.rotate(-self._twist_deg, expand=True, fillcolor=255)
-        if self._rotate:
-            img = img.rotate(-self._rotate, expand=True, fillcolor=255)
+        """Send image to panel.
+
+        No coordinate rotation is applied here — the Waveshare getbuffer() handles
+        both portrait (122×250) and landscape (250×122) images internally.
+        The only transform applied is the 180° mount correction (_correct_180) which
+        compensates for holding the device upside-down (ports on top).
+        """
+        if self._correct_180:
+            img = img.rotate(180, fillcolor=255)
         self._draw_to_panel(img)
 
     def show_text(self, text: str, font_size: int | None = None) -> None:
@@ -394,14 +393,13 @@ def get_display() -> Display:
     global _singleton
     with _singleton_lock:
         if _singleton is None:
-            rot = effective_rotate()
-            inv = effective_invert()
-            twist = effective_coordinate_twist_deg()
-            _singleton = Display(rotate=rot, invert=inv, coordinate_twist_deg=twist)
+            rot    = effective_rotate()
+            inv    = effective_invert()
+            twist  = effective_coordinate_twist_deg()
+            c180   = effective_correct_180()
+            _singleton = Display(rotate=rot, invert=inv, coordinate_twist_deg=twist, correct_180=c180)
             logger.info(
-                "EPD singleton: rotate=%s twist=%s invert=%s (data/display_settings.json)",
-                rot,
-                twist,
-                inv,
+                "EPD singleton: rotate=%s invert=%s correct_180=%s (data/display_settings.json)",
+                rot, inv, c180,
             )
         return _singleton
