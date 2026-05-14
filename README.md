@@ -10,16 +10,41 @@ Full task breakdown and acceptance criteria live in [`plan.md`](plan.md) at the 
 2. Ensure Waveshare sources exist at `/home/purin/e-Paper` **without modifying them**.
 3. Confirm the panel module name matches `app/epd.py` → `PANEL_MODULE` (Task 1 in `plan.md`).
 4. Enable **SPI** (Raspberry Pi OS: **Raspberry Pi Configuration** → Interfaces → SPI, or `raspi-config`), then reboot if needed.
-5. Install deps (includes **`spidev`** and **`RPi.GPIO`** for Waveshare’s `epdconfig`):
+5. Install **`requirements.txt`** into the **same venv systemd uses** (see **`ExecStart`** in the unit):
 
 ```bash
-cd ~/purin_pi
+cd ~/purin_pi   # or ~/pi_keychain
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-For systemd we call system Python (`/usr/bin/python3 -m app.main`); install packages system-wide **or** change `ExecStart` to your venv interpreter.
+**What Waveshare’s current `epdconfig.py` needs on Raspberry Pi** (upstream [epdconfig.py](https://github.com/waveshareteam/e-Paper/blob/master/RaspberryPi_JetsonNano/python/lib/waveshare_epd/epdconfig.py)): when `/proc/cpuinfo` contains **`Raspberry`**, class **`RaspberryPi`** does **`import spidev`** and **`import gpiozero`**. It does **not** use **`RPi.GPIO`** in that path.
+
+Build helpers if **`pip install spidev`** fails:
+
+```bash
+sudo apt-get install -y python3-dev python3-venv gcc
+```
+
+**Raspberry Pi OS Bookworm / newer kernels:** `gpiozero` often needs the **`lgpio`** backend. Prefer the distro package, then either:
+
+- run with **`GPIOZERO_PIN_FACTORY=lgpio`**, or  
+- create the venv with **`python3 -m venv --system-site-packages .venv`** after **`sudo apt install python3-lgpio`**.
+
+Optional in **`purin-dashboard.service`** under **`[Service]`**:
+
+```ini
+Environment=GPIOZERO_PIN_FACTORY=lgpio
+```
+
+Verify imports **with the venv Python** (same as **`ExecStart`**):
+
+```bash
+/home/purin/pi_keychain/.venv/bin/python -c "import spidev, gpiozero; print('ok')"
+```
+
+Your unit should **`ExecStart=.../.venv/bin/python -m app.main`** so **`pip install`** must run **inside that `.venv`**.
 
 6. Bring up the AP:
 

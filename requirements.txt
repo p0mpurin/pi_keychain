@@ -1,5 +1,16 @@
+# Web UI
 Flask>=3.0
 Pillow>=10.0
 qrcode[pil]>=7.4
+
+# ── Waveshare e-Paper (Raspberry Pi) — matches upstream epdconfig “RaspberryPi” class ──
+# https://github.com/waveshareteam/e-Paper/blob/master/RaspberryPi_JetsonNano/python/lib/waveshare_epd/epdconfig.py
+#
+# Imports used when /proc/cpuinfo contains "Raspberry":
+#   spidev   → /dev/spidev0.0
+#   gpiozero → RST/DC/BUSY/PWR pins (LED/Button wrappers)
+#
+# Older Waveshare trees used RPi.GPIO — current master uses gpiozero, not RPi.GPIO.
+
 spidev>=3.6
-RPi.GPIO>=0.7.1
+gpiozero>=2.0
