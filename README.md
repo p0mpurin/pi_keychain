@@ -27,20 +27,20 @@ Build helpers if **`pip install spidev`** fails:
 sudo apt-get install -y python3-dev python3-venv gcc
 ```
 
-**Raspberry Pi OS Bookworm / kernel 6.x:** Waveshare’s `gpiozero.Button(BUSY_PIN)` uses edge detection. If **`lgpio`** is missing, **`gpiozero`** falls back to **`RPi.GPIO`** and you get **`PinFactoryFallback: Falling back from lgpio`** then **`RuntimeError: Failed to add edge detection`**. Fix:
+**Raspberry Pi OS Bookworm / kernel 6.x:** Waveshare’s `gpiozero.Button(BUSY_PIN)` uses edge detection. Without **`lgpio`**, **`gpiozero`** falls back to **`RPi.GPIO`** → **`PinFactoryFallback`** / **`Failed to add edge detection`**.
+
+Install build dependencies, then **`pip install -r`** (PyPI **`lgpio`** needs **SWIG** + headers):
 
 ```bash
-sudo apt-get install -y python3-dev liblgpio-dev  # Debian lgpio headers; PyPI builds or links the `pip` binding
+sudo apt-get install -y swig python3-dev gcc liblgpio-dev
 ```
-
-Then reinstall your venv packages ( **`lgpio`** is pinned in **`requirements.txt`**):
 
 ```bash
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-If **`pip install lgpio`** fails, pull in distro bindings and recreate the venv:
+If you see **`error: command 'swig' failed`**, install **`swig`** as above. If **`pip`** still fails to compile **`lgpio`**, skip building and use distro Python bindings + a venv that can see them:
 
 ```bash
 sudo apt-get install -y python3-lgpio
